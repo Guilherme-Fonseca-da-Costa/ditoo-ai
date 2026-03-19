@@ -1,5 +1,4 @@
 /documentos
-# 1. Ambientes Virtuais (Essencial!)
 venv/
 .venv/
 env/
