@@ -73,11 +73,11 @@ app.add_middleware(
 )
 
 
-# Splitter
+# Splitter (Vai dividir o texto em blocos menores para o ChromaDB)
 def splitter(texto, chunk_length=500):
     return [texto[i:i+chunk_length] for i in range(0, len(texto), chunk_length)]
 
-# docs
+# docs (Vai ler os arquivos da pasta "documentos" e indexar no ChromaDB)
 def carregar_documentos(diretorio="./documentos"):
     if not os.path.exists(diretorio):
         os.makedirs(diretorio)
@@ -101,7 +101,7 @@ def carregar_documentos(diretorio="./documentos"):
             chunks = splitter(texto_completo)
             for i, bloco in enumerate(chunks):
               
-
+# (vai inserir o bloco no ChromaDB, associando o ID e a fonte do arquivo)
                 collection.upsert(
                     documents=[bloco],
                     ids=[f"{arquivo}_part_{i}"],
@@ -113,11 +113,14 @@ def carregar_documentos(diretorio="./documentos"):
 
 carregar_documentos()
 
+def percent_files(percentage):
+    percentage = max(0, min(10, percentage))
+
 # --- LOOP DO CHAT ---
 @app.post("/ask")
 async def answer(request_data: Ask):
-
-    results = collection.query(query_texts=[request_data.texto], n_results=5)
+    # (Vai consultar o ChromaDB usando o texto da pergunta e obter os resultados mais relevantes)
+    resultsRank = results = collection.query(query_texts=[request_data.texto], n_results=5)
 
     fontes_com_pontos = {}
     
@@ -131,20 +134,25 @@ async def answer(request_data: Ask):
             
         print(f"DEBUG: Pontuação de fontes: {fontes_com_pontos}")
 
-    if fontes_com_pontos:
         fonte_vencedora = max(fontes_com_pontos, key=fontes_com_pontos.get)
-    else:
-        fonte_vencedora = "Nenhuma"
 
-    # Show source
+    #(vai escolher a fonte mais relevante com base na pontuação e consultar novamente o ChromaDB para obter os blocos de texto relacionados a essa fonte)
+    if fonte_vencedora:
+        results = collection.query(query_texts=[request_data.texto], n_results=5, where={"fonte": fonte_vencedora})
+    else:
+        results = resultsRank
+
+    # (vai construir o contexto para a resposta usando os blocos de texto obtidos e criar o prompt para o modelo de linguagem, incluindo o contexto e a pergunta do usuário)
     if results['metadatas'] and results['metadatas'][0]:
         fontes = [meta['fonte'] for meta in results['metadatas'][0]]
         print(f"DEBUG: Consultando trechos dos arquivos: {list(set(fontes))}")
 
     if results['documents'] and results['documents'][0]:
         contexto = "\n---\n".join(results['documents'][0])
+        print(f"DEBUG: Contexto construído com {contexto}.")
     else:
         contexto = "Nenhum contexto encontrado."
+        print(f"DEBUG: Sem Contexto construído com {contexto}.")
 
     prompt_sistema = f"""
     Você é o Ditoo, um assistente de pesquisa.
@@ -159,6 +167,7 @@ async def answer(request_data: Ask):
 
 # LLM Model:
     id_resposta = str(uuid.uuid4())
+    # (vai enviar o prompt para o modelo de linguagem e obter a resposta gerada, enviando a resposta em partes para o frontend usando streaming)
     def generate():
         
         print(f"id_resposta:{id_resposta}")
@@ -171,6 +180,7 @@ async def answer(request_data: Ask):
         ],
         stream=True,
     )
+        
         for chunk in stream:
             content = chunk['message']['content']
             yield json.dumps({"type": "content", "text": content, "id": id_resposta, "fontes": fontes, "winner": fonte_vencedora}) + "\n"
