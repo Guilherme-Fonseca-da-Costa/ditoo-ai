@@ -1,7 +1,13 @@
+import os
+import subprocess
+import time
+os.environ["OLLAMA_NUM_PARALLEL"] = "4"
+os.environ["OLLAMA_MAX_LOADED_MODELS"] = "1"
+subprocess.Popen(["ollama", "serve"])
+time.sleep(2)
 import ollama
 import chromadb
 import fitz
-import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
@@ -10,7 +16,7 @@ from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 import json
 import uuid
-import time
+
 
 
 class Ask(BaseModel):
@@ -158,7 +164,7 @@ async def answer(request_data: Ask):
         print(f"id_resposta:{id_resposta}")
         yield json.dumps({"type": "id", "id": id_resposta}) + "\n"
         stream = ollama.chat(
-        model='erwan2/DeepSeek-R1-Distill-Qwen-7B',
+        model='deepseek-r1:8b',
         messages=[
             {'role': 'system', 'content': prompt_sistema},
             {'role': 'user', 'content': request_data.texto}
@@ -181,4 +187,9 @@ async def answer(request_data: Ask):
     #    print(chunk['message']['content'], end='', flush=True)
     #print()
 
-    #uvicorn engine:app --host 0.0.0.0 --port 8000
+    #Para executar:
+    #source venv/Scripts/activate
+    #python -m uvicorn engine:app --host 0.0.0.0 --port 8000 --reload
+
+    
+    #Tem que dar source venv/Scripts/activate
