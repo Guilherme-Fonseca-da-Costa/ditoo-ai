@@ -108,7 +108,52 @@ const App = () => {
   return (
     <div id="chatPage">
       <div id="logoBlock">
-        <div id="fonts-container">
+       
+      </div>
+      <div id="chat">
+        <div id="chatMessages">
+          {messages.map((messages) => {
+            if (!messages.message && messages.sender === "User") return null;
+            return (
+              <>
+                <div
+                  key={messages.id}
+                  className={
+                    messages.sender === "Ditoo" ? "responseAi" : "responseUser"
+                  }
+                  style={{
+                    marginTop: "20px",
+                    whiteSpace: "pre-wrap",
+                    padding: "15px",
+                  }}
+                >
+                  {messages.message}
+                  <div ref={bottomRef} />
+                </div>
+              </>
+            );
+          })}
+        </div>
+          
+        <form id="chatForm">
+          <input
+            id="chatInput"
+            value={pergunta}
+            onChange={(e) => setPergunta(e.target.value)}
+            placeholder="O que deseja saber?"
+            style={{ width: "80%", padding: "10px", borderRadius: 18 }}
+          />
+
+          <button id="chatSendButton" onClick={enviar} disabled={loading}>
+            {loading ? (
+              <img width={28} src={loadingGif} alt="" />
+            ) : (
+              <img width={28} src={paperPlane} alt="" />
+            )}
+          </button>
+        </form>
+      </div>
+       <div id="fonts-container">
           <div
             className="fonts-container-itens"
             style={{
@@ -161,50 +206,6 @@ const App = () => {
             </div>
           </div>
         </div>
-      </div>
-      <div id="chat">
-        <div id="chatMessages">
-          {messages.map((messages) => {
-            if (!messages.message && messages.sender === "User") return null;
-            return (
-              <>
-                <div
-                  key={messages.id}
-                  className={
-                    messages.sender === "Ditoo" ? "responseAi" : "responseUser"
-                  }
-                  style={{
-                    marginTop: "20px",
-                    whiteSpace: "pre-wrap",
-                    padding: "15px",
-                  }}
-                >
-                  {messages.message}
-                  <div ref={bottomRef} />
-                </div>
-              </>
-            );
-          })}
-        </div>
-
-        <form id="chatForm">
-          <input
-            id="chatInput"
-            value={pergunta}
-            onChange={(e) => setPergunta(e.target.value)}
-            placeholder="O que deseja saber?"
-            style={{ width: "80%", padding: "10px", borderRadius: 18 }}
-          />
-
-          <button id="chatSendButton" onClick={enviar} disabled={loading}>
-            {loading ? (
-              <img width={28} src={loadingGif} alt="" />
-            ) : (
-              <img width={28} src={paperPlane} alt="" />
-            )}
-          </button>
-        </form>
-      </div>
     </div>
   );
 };
