@@ -1,15 +1,18 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import downloadIcon from "../assets/download.png";
 import loadingGif from "../assets/Rolling@1x-1.0s-200px-200px.gif";
 import pdfIcon from "../assets/pdf.png";
 import paperPlane from "../assets/paper-plane.png";
 import docsImg from "../assets/docs.png";
 import ditoo from "../assets/ditto.png";
+import notificationSound from "../assets/soundEffect/sunovia-level-up-289723.mp3";
 
 const App = () => {
   const [pergunta, setPergunta] = useState("");
   const [loading, setLoading] = useState(false);
   const [font, setFontes] = useState("Sem fonte");
+  const bottomRef = useRef<HTMLDivElement>(null);
+  const audioRef = useRef<HTMLAudioElement>(new Audio(notificationSound));
   const [messages, setMessages] = useState([
     {
       id: Date.now(),
@@ -89,6 +92,19 @@ const App = () => {
     setLoading(false);
   }
 
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
+  useEffect(() => {
+    if (!loading) {
+      const lastMessage = messages[messages.length - 1];
+      if (lastMessage?.sender === "Ditoo") {
+        audioRef.current?.play();
+      }
+    }
+  }, [loading]);
+
   return (
     <div id="chatPage">
       <div id="logoBlock">
@@ -164,6 +180,7 @@ const App = () => {
                   }}
                 >
                   {messages.message}
+                  <div ref={bottomRef} />
                 </div>
               </>
             );
