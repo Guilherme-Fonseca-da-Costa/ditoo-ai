@@ -115,7 +115,8 @@ carregar_documentos()
 
 def percent_files(percentage):
     percentage = max(0, min(10, percentage))
-
+    result = int((percentage / 10) * 100)
+    return result
 # --- LOOP DO CHAT ---
 @app.post("/ask")
 async def answer(request_data: Ask):
@@ -131,16 +132,28 @@ async def answer(request_data: Ask):
             pontos = 5 - i
             
             fontes_com_pontos[arquivo] = fontes_com_pontos.get(arquivo, 0) + pontos
-            
+    
+        percentResult = percent_files(fontes_com_pontos[max(fontes_com_pontos, key=fontes_com_pontos.get)])    
         print(f"DEBUG: Pontuação de fontes: {fontes_com_pontos}")
+        print(f"DEBUG: porcentagem de concordância: {percentResult}%")
 
         fonte_vencedora = max(fontes_com_pontos, key=fontes_com_pontos.get)
 
     #(vai escolher a fonte mais relevante com base na pontuação e consultar novamente o ChromaDB para obter os blocos de texto relacionados a essa fonte)
     if fonte_vencedora:
-        results = collection.query(query_texts=[request_data.texto], n_results=5, where={"fonte": fonte_vencedora})
-    else:
-        results = resultsRank
+        results = collection.query(query_texts=[request_data.texto], n_results=5, where={"fonte": fonte_vencedora}, include=["documents", "metadatas", "distances"])
+
+    sortedFonts = sorted(fontes_com_pontos.items(), key=lambda x: x[1], reverse=True)
+    bestDistance = results['distances'][0][0] if results['distances'] and results['distances'][0] else None
+    print(f"DEBUG: Distância do resultado mais relevante: {bestDistance}")
+
+    distanceLimit = 1.1
+
+    if bestDistance > distanceLimit and len(sortedFonts) > 1:
+        print(f"DEBUG: Distância {bestDistance} é maior que o limite {distanceLimit}. Considerando a segunda melhor fonte.")
+        segundaMelhorFonte = sortedFonts[1][0]
+        results = collection.query(query_texts=[request_data.texto], n_results=5, where={"fonte": segundaMelhorFonte}, include=["documents", "metadatas", "distances"])
+        fonte_vencedora = segundaMelhorFonte
 
     # (vai construir o contexto para a resposta usando os blocos de texto obtidos e criar o prompt para o modelo de linguagem, incluindo o contexto e a pergunta do usuário)
     if results['metadatas'] and results['metadatas'][0]:
@@ -183,7 +196,7 @@ async def answer(request_data: Ask):
         
         for chunk in stream:
             content = chunk['message']['content']
-            yield json.dumps({"type": "content", "text": content, "id": id_resposta, "fontes": fontes, "winner": fonte_vencedora}) + "\n"
+            yield json.dumps({"type": "content", "text": content, "id": id_resposta, "fontes": fontes, "winner": fonte_vencedora, "percent": percentResult}) + "\n"
 
     return StreamingResponse(generate(), media_type="application/x-ndjson")
     
