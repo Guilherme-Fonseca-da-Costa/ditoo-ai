@@ -209,21 +209,47 @@ html{
 #fonts-container{
   display: flex;
   justify-content:center;
-  align-items: baseline;
-  padding-top: 20px;
-  width: 300px;
-  height: 95%;
+  align-items: center;
+  padding: 0 0 15px 100px;
   border-radius: 20px;
-  background-color: rgba(37, 37, 37, 0.705);
-  box-shadow: 1px 10px 10px 1px rgba(0, 0, 0, 0.267);
+  transition: all 5.4s;
 }
 
 .fonts-container-itens{
-  padding: 10px;
-  width: 260px;
+  align-items: center;
+  display: flex;
+  justify-content: center;
   border: solid rgb(87, 87, 87) 2px;
   border-radius: 20px;
   background-color: rgb(46, 46, 46);
+  padding: 0 10px 0 10px;
+  max-width: 178px;
+  
+}
+
+.fontExNot {
+  height: 0px;
+  overflow: hidden; 
+  
+}
+
+.fontExpanded {
+  height: 65px;
+  overflow: visible; 
+  
+}
+
+.altFont{
+  position: absolute;
+  top: -35px;
+  left: 30px;
+  font-size: 14px;
+  background-color: #181818;
+  padding: 7px;
+  border-radius: 10px;
+  font-weight: bold;
+  color: #ffffffb3;
+  margin-top: 5px;
 }
 
 #relevBar{
@@ -236,7 +262,6 @@ html{
 
 #relevBarIn{
   background-color: rgba(0, 162, 255, 0.623);
-  width: 70%;
   height: 8px;
   border-radius: 10px;
 }

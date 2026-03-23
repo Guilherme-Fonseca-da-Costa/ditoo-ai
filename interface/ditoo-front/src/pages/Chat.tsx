@@ -12,6 +12,8 @@ const App = () => {
   const [loading, setLoading] = useState(false);
   const [font, setFontes] = useState("Sem fonte");
   const bottomRef = useRef<HTMLDivElement>(null);
+  const [showAltFont, setShowAltFont] = useState<string | null>(null);
+  const [fontState, setFontState] = useState("fontExNot");
   const audioRef = useRef<HTMLAudioElement>(new Audio(notificationSound));
   const [messages, setMessages] = useState([
     {
@@ -19,6 +21,7 @@ const App = () => {
       sender: "User",
       message: pergunta,
       font: font,
+      percent: "",
     },
   ]);
   async function enviar() {
@@ -33,6 +36,7 @@ const App = () => {
         sender: "User",
         message: pergunta,
         font: "",
+        percent: "",
       },
     ]);
     setPergunta("");
@@ -67,7 +71,13 @@ const App = () => {
         if (data.type === "id") {
           setMessages((prev) => [
             ...prev,
-            { id: data.id, sender: "Ditoo", message: "", font: data.fontes },
+            {
+              id: data.id,
+              sender: "Ditoo",
+              message: "",
+              font: data.fontes,
+              percent: data.percent,
+            },
           ]);
         } else if (data.type === "content") {
           //console.log(textPlus);
@@ -75,6 +85,7 @@ const App = () => {
           //console.log(data.fontes);
 
           setFontes(data.winner);
+          console.log("Porcentagem de concordância: " + data.percent + "%");
           setMessages((prev) =>
             prev.map((msg) =>
               msg.id === data.id
@@ -82,6 +93,7 @@ const App = () => {
                     ...msg,
                     message: msg.message + data.text,
                     font: data.winner,
+                    percent: data.percent,
                   }
                 : msg,
             ),
@@ -107,9 +119,7 @@ const App = () => {
 
   return (
     <div id="chatPage">
-      <div id="logoBlock">
-       
-      </div>
+      <div id="logoBlock"></div>
       <div id="chat">
         <div id="chatMessages">
           {messages.map((messages) => {
@@ -130,11 +140,102 @@ const App = () => {
                   {messages.message}
                   <div ref={bottomRef} />
                 </div>
+                {messages.font && (
+                  <div id="fonts-container">
+                    <div
+                      className="fonts-container-itens"
+                      style={{
+                        display: "flex",
+                        alignItems: "flex-start",
+                        justifyContent: "flex-start",
+                        flexDirection: "column",
+                      }}
+                    >
+                      <div
+                        onMouseEnter={() => setFontState("fontExpanded")}
+                        onClick={() => setFontState("fontExNot")}
+                        style={{
+                          display: "flex",
+                          marginBottom: 3,
+                          cursor: "pointer",
+                          visibility: "visible",
+                        }}
+                      >
+                        <img
+                          width={25}
+                          height={25}
+                          src={docsImg}
+                          alt=""
+                          style={{
+                            margin: "4px 0 1px 10px",
+                          }}
+                        />
+                        <h3
+                          style={{
+                            userSelect: "none",
+                            fontFamily: "Fira",
+                            color: "white",
+                            fontSize: 15,
+                            fontWeight: "bold",
+                            margin: "6px 0 0 10px",
+                            whiteSpace: "nowrap",
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            maxWidth: "120px",
+                          }}
+                        >
+                          {messages.font}
+                        </h3>
+                      </div>
+                      <div
+                        className={fontState}
+                        style={{
+                          position: "relative",
+                          width: "100%",
+                          transition: "all 0.2s",
+                        }}
+                      >
+                        <h4
+                          onMouseEnter={() => setShowAltFont(messages.font)}
+                          onMouseLeave={() => setShowAltFont(null)} 
+                          style={{
+                            fontFamily: "Fira",
+                            fontWeight: "normal",
+                            color: "gray",
+                            fontSize: 15,
+                            margin: 0,
+                            whiteSpace: "nowrap",
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                          }}
+                        >
+                          Ditoo/documentos/{messages.font}
+                        </h4>
+                        {showAltFont && (
+                          <h4 key={messages.font} onMouseLeave={() => setShowAltFont(null)} onMouseEnter={() => setShowAltFont(messages.font)} className="altFont">Ditoo/documentos/{messages.font}</h4>
+                        )}
+                        <div id="relevBar">
+                          <div style={{ width: `${messages.percent}%` }} id="relevBarIn"></div>
+                        </div>
+                        <h4
+                          style={{
+                            margin: "7px 0px 0px 0px",
+                            fontSize: 11,
+                            color: "gray",
+                            fontFamily: "Fira",
+                          }}
+                        >
+                          Relevância: {messages.percent}%
+                        </h4>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </>
             );
           })}
         </div>
-          
+
         <form id="chatForm">
           <input
             id="chatInput"
@@ -153,59 +254,6 @@ const App = () => {
           </button>
         </form>
       </div>
-       <div id="fonts-container">
-          <div
-            className="fonts-container-itens"
-            style={{
-              display: "flex",
-              alignItems: "flex-start",
-              justifyContent: "flex-start",
-              flexDirection: "column",
-            }}
-          >
-            <div style={{ display: "flex", marginBottom: 3 }}>
-              <img width={25} height={25} src={docsImg} alt="" />
-              <h3
-                style={{
-                  fontFamily: "Fira",
-                  color: "white",
-                  fontSize: 15,
-                  fontWeight: "bold",
-                  margin: "0 0 0 10px",
-                }}
-              >
-                documento.pdf
-              </h3>
-            </div>
-
-            <div style={{ width: "100%" }}>
-              <h4
-                style={{
-                  fontFamily: "Fira",
-                  fontWeight: "normal",
-                  color: "gray",
-                  fontSize: 15,
-                  margin: 0,
-                }}
-              >
-                C:/src/documento.pdf
-              </h4>
-              <div id="relevBar">
-                <div id="relevBarIn"></div>
-              </div>
-              <h4
-                style={{
-                  margin: "7px 0px 0px 0px",
-                  fontSize: 11,
-                  color: "gray",
-                  fontFamily: "Fira",
-                }}
-              >
-                Relevância: 70%
-              </h4>
-            </div>
-          </div>
-        </div>
     </div>
   );
 };
