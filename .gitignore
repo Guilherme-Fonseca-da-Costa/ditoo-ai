@@ -1,5 +1,8 @@
 engine/documentos
 engine/database/ditoo.db
+engine/dist
+engine/build
+engine/ditoo-server.spec
 venv/
 .venv/
 env/
