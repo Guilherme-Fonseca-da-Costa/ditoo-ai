@@ -12,7 +12,7 @@ const App = () => {
   const [loading, setLoading] = useState(false);
   const [font, setFontes] = useState("Sem fonte");
   const bottomRef = useRef<HTMLDivElement>(null);
-  const [showAltFont, setShowAltFont] = useState<string | null>(null);
+  const [showAltFont, setShowAltFont] = useState(false);
   const [fontState, setFontState] = useState("fontExNot");
   const audioRef = useRef<HTMLAudioElement>(new Audio(notificationSound));
   const [messages, setMessages] = useState([
@@ -196,8 +196,8 @@ const App = () => {
                         }}
                       >
                         <h4
-                          onMouseEnter={() => setShowAltFont(messages.font)}
-                          onMouseLeave={() => setShowAltFont(null)} 
+                          onMouseEnter={() => setShowAltFont(true)}
+                          onMouseLeave={() => setShowAltFont(false)} 
                           style={{
                             fontFamily: "Fira",
                             fontWeight: "normal",
@@ -212,7 +212,7 @@ const App = () => {
                           Ditoo/documentos/{messages.font}
                         </h4>
                         {showAltFont && (
-                          <h4 key={messages.font} onMouseLeave={() => setShowAltFont(null)} onMouseEnter={() => setShowAltFont(messages.font)} className="altFont">Ditoo/documentos/{messages.font}</h4>
+                          <h4 key={messages.font} onMouseLeave={() => setShowAltFont(false)} onMouseEnter={() => setShowAltFont(true)} className="altFont">Ditoo/documentos/{messages.font}</h4>
                         )}
                         <div id="relevBar">
                           <div style={{ width: `${messages.percent}%` }} id="relevBarIn"></div>
