@@ -1,11 +1,9 @@
-import React, { useEffect, useRef, useState } from "react";
-import downloadIcon from "../assets/download.png";
+import { useEffect, useRef, useState } from "react";
 import loadingGif from "../assets/Rolling@1x-1.0s-200px-200px.gif";
-import pdfIcon from "../assets/pdf.png";
 import paperPlane from "../assets/paper-plane.png";
 import docsImg from "../assets/docs.png";
-import ditoo from "../assets/ditto.png";
 import notificationSound from "../assets/soundEffect/sunovia-level-up-289723.mp3";
+
 
 const App = () => {
   const [pergunta, setPergunta] = useState("");
@@ -40,7 +38,7 @@ const App = () => {
       },
     ]);
     setPergunta("");
-    const response = await fetch("http://localhost:8000/ask", {
+    const response = await fetch("/ask", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ texto: pergunta }),
