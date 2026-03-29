@@ -192,6 +192,9 @@ async def answer(request_data: Ask):
             {'role': 'user', 'content': request_data.texto}
         ],
         stream=True,
+        #adicionei este parâmetro para evitar que a conexão seja fechada automaticamente após o término da resposta, melhora bastante a velocidade da resposta já que o modelo fica sempre carregado depois que inicia
+        # tem que lembrar de fechar o ollama para desocupar a VRAM ou reiniciar a máquina.
+        keep_alive=-1
     )
         
         for chunk in stream:
