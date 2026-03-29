@@ -1,0 +1,17 @@
+engine/documentos
+engine/database/ditoo.db
+venv/
+.venv/
+env/
+python-env/
+vetores_db/
+__pycache__/
+*.py[cod]
+*$py.class
+
+.DS_Store
+Thumbs.db
+*.log
+.env
+.pytest_cache/
+.coverage
