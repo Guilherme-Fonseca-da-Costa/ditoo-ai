@@ -1,0 +1,36 @@
+@font-face {
+  font-family: 'Poppins';
+  src: url(assets/poppins.regular.ttf);
+  font-weight: normal;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'Poppins';
+  src: url(poppins.semibold.ttf);
+  font-weight: bold;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'Fira';
+  src: url(FiraCode-Bold.ttf);
+  font-weight: bold;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'Fira';
+  src: url(FiraCode-Regular.ttf);
+  font-weight: normal;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'Google-sans';
+  src: url(GoogleSans-Regular.ttf);
+  font-weight: normal;
+  font-style: normal;
+}
+
+
