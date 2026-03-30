@@ -86,9 +86,9 @@ async def registrar_mdns():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    zeroconf = await registrar_mdns()  # 👈 await
+    zeroconf = await registrar_mdns()
     yield
-    await zeroconf.async_close()       # 👈 await
+    await zeroconf.async_close()
 
 class Ask(BaseModel):
     texto: str
