@@ -1,3 +1,4 @@
+from database import SessionLocal, User, engine
 import os
 import sys
 import subprocess
