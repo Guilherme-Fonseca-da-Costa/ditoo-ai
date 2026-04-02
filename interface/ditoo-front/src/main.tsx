@@ -5,6 +5,7 @@ import './assets/index.css'
 import './assets/loginPage.css'
 import './assets/fonts.css'
 import './assets/configPage.css'
+import './assets/notFoundPage.css'
 import Chat from "./pages/Chat"
 import LoginPage from './pages/LoginPage.tsx';
 import Config from './pages/Config.tsx';
