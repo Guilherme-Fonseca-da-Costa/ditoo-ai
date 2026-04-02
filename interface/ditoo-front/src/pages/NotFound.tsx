@@ -5,13 +5,13 @@ const NotFound: React.FC = () => {
     const navigate = useNavigate();
 
     return (
-        <div className="flex items-center justify-center min-h-screen bg-gray-100">
-            <div className="text-center">
-                <h1 className="text-6xl font-bold text-gray-800 mb-4">404</h1>
-                <p className="text-xl text-gray-600 mb-8">Página não encontrada</p>
+        <div id="notFoundPage">
+            <div className="">
+                <h1 style={{fontSize: '14em', color: "#858585", marginBottom: 0, marginTop: 20}}>404</h1>
+                <p style={{fontFamily: 'Google-sans', color: "#858585", fontSize: '2em', fontWeight: 'bold'}}>Página não encontrada</p>
                 <button
-                    onClick={() => navigate('/')}
-                    className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-6 rounded"
+                    onClick={() => navigate('/chat')}
+                    id='notFoundReturnButton'
                 >
                     Voltar ao Início
                 </button>
