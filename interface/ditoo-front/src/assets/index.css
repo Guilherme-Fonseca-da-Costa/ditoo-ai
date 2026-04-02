@@ -8,6 +8,7 @@ body{
 
 html{
   background: linear-gradient(105deg,#51335E, #222222, #222222);
+  font-family: 'Google-sans';
 }
 
 ::-webkit-scrollbar{
