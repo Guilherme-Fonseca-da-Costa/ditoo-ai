@@ -1,0 +1,100 @@
+#configPage{
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    width: 90vw;
+    border-radius: 20px;
+    height: 95vh;
+    background-color: rgba(73, 73, 73, 0);
+}
+
+#configSideBar{
+    width: 100%;
+    background-color: rgba(255, 255, 255, 0);
+    border-top-left-radius: 15px;
+    border-top-right-radius: 15px;
+}
+
+.configSideBarButton{
+    position: relative;
+    top: 0.3px;
+    z-index: 999;
+    user-select: none;
+    font-family: 'Google-sans';
+    height: 50px;
+    padding: 0px 20px;
+    font-size: 16px;
+    color: rgb(167, 167, 167);
+    background-color: rgba(73, 73, 73, 0.76);
+    border: none;
+    border-top-left-radius: 15px;
+    border-top-right-radius: 15px;
+    transition: all 0.3s;
+    cursor: pointer;
+}
+
+.configSideBarButtonActive{
+    height: 50px;
+     background-color: rgb(73, 73, 73);
+  
+}
+
+.configSideBarButtonActive:hover{
+     background-color: rgb(58, 58, 58);
+}
+
+.configSideBarButtonOff{
+     background-color: rgb(53, 53, 53);
+}
+
+.configSideBarButtonOff:hover{
+     background-color: rgb(99, 76, 102);
+}
+
+#configBlock{
+    position: relative;
+    width: 100%;
+    height: calc(100%);
+    background-color: rgba(73, 73, 73, 0.76);
+    border-bottom-left-radius: 15px;
+    border-bottom-right-radius: 15px;
+    border-top-right-radius: 15px;
+    box-shadow: 1px 1px 10px 1px rgba(0, 0, 0, 0.158);
+    z-index: 0;
+}
+
+#modelSelector{
+    margin-top: 20px;
+    padding-left: 10px;
+    padding-right: 10px;
+    height: 40px;
+    font-family: 'Google-sans';
+    background-color: #5a5a5a;
+    border: none;
+    border-radius: 10px;
+    box-shadow: #47474765 1px 1px 10px 5px;
+    color: white;
+    outline: none;
+    transition: all 0.3s;
+    font-size: large;
+    }
+
+select option {
+  background-color: #2f2f2f;
+  border: none;
+  border-radius: 20px;
+}
+
+#userCreatorForm{
+    display: flex;
+    flex-direction: column;
+    width: 400px;
+    justify-content: center;
+    gap: 20px;
+    margin-top: 20px;
+}
