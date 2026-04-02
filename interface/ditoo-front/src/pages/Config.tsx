@@ -54,6 +54,7 @@ export default function Config() {
               <h3>Configurações de Pastas</h3>
               <div id="normalFolders">
                 <div className="folderConfigItem">
+                  <h4>Definir pastas normais</h4>
                   <h4>Ditoo/documentos</h4>
                   <button className="editFolderButton">Editar</button>
                   <button className="deleteFolderButton">Excluir</button>
@@ -61,6 +62,7 @@ export default function Config() {
               </div>
               <div id="secretFolders">
                 <div className="folderConfigItem">
+                  <h4>Definir pastas secretas</h4>
                   <h4>Ditoo/documentos/Notas Fiscais</h4>
                   <button className="editFolderButton">Editar</button>
                   <button className="deleteFolderButton">Excluir</button>
