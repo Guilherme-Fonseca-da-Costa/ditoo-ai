@@ -1,0 +1,35 @@
+#notFoundPage {
+    position: absolute;
+    top: 20%;
+    left: 50%;
+    transform: translate(-50%, -20%);
+    display: flex;
+    width: 500px;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(-40deg,rgba(117, 109, 117, 0.459), rgba(49, 49, 49, 0.205));
+    border-radius: 15px;
+    border: 1px solid rgba(255, 255, 255, 0.26);
+    font-family: 'Google-sans';
+}
+
+#notFoundReturnButton{
+    font-family: 'Google-sans';
+    font-weight: bold;
+    margin-top: 20px;
+    margin-bottom: 40px;
+    padding: 10px 20px;
+    font-size: 16px;
+    color: rgb(167, 167, 167);
+    background-color: rgba(73, 73, 73, 0.76);
+    border: none;
+    border-radius: 10px;
+    transition: all 0.3s;
+    cursor: pointer;
+}
+
+#notFoundReturnButton:hover{
+    background-color: rgb(73, 73, 73);
+    scale: 1.05;
+}
