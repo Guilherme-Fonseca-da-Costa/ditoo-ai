@@ -33,9 +33,18 @@ class ConfigAdmin(Base):
     confidentialFolders = Column(String)
 
 # Insert de teste no SQLITE
+"""
 db = SessionLocal()
 new_user = User(name="John Doe", email="john@example.com", password="password123")
 db.add(new_user)
 db.commit()
 db.refresh(new_user)
 print(f"User created: {new_user.name} with email {new_user.email}") 
+"""
+
+# Consulta de teste no SQLITE
+"""
+db = SessionLocal()
+users = db.query(User).filter(User.email == "john@example.com").all()
+print(f"Users in database: {[user.name for user in users]}")
+"""
