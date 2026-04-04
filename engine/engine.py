@@ -195,6 +195,9 @@ def percent_files(percentage):
     result = int((percentage / 10) * 100)
     return result
 
+@app.get("/login")
+def get_users():
+    return User.query(User).all()
 
 # Endpoint para receber perguntas, consultar o ChromaDB e retornar respostas geradas pelo modelo
 @app.post("/ask")
