@@ -19,12 +19,11 @@ src/
 
 ## Setup
 
-1. Copie esses arquivos para o seu projeto substituindo os anteriores.
-2. Instale as dependências novas (caso ainda não tenha):
+1. Instale as dependências:
    ```bash
    npm install
    ```
-3. Rode em desenvolvimento:
+2. Rode em desenvolvimento:
    ```bash
    npm run build
    npm run dev
