@@ -1,4 +1,4 @@
-# ditoo-front — Interface Redesenhada
+# ditoo-front
 
 ## Estrutura de arquivos
 
