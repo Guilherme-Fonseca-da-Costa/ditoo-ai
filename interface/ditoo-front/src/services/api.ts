@@ -16,13 +16,5 @@ export const api = {
             headers: { "Content-Type": "application/json" },
         });
         return res.json();
-    },
-    register: async (user: string, pass: string) => {
-        const res = await fetch("/register", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ username: user, password: pass }),
-        });
-        return res.json();
     }
 }
