@@ -226,11 +226,15 @@ function HistoryEntry({
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export default function Chat() {
+  const [isMobileViewport, setIsMobileViewport] = useState(
+    () => typeof window !== "undefined" && window.matchMedia("(max-width: 900px)").matches
+  );
+
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [rightOpen, setRightOpen] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(() => !isMobileViewport);
+  const [rightOpen, setRightOpen] = useState(() => !isMobileViewport);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showAppear, setShowAppear] = useState(false);
   const [activeSources, setActiveSources] = useState<Source[]>([]);
@@ -246,6 +250,17 @@ export default function Chat() {
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const media = window.matchMedia("(max-width: 900px)");
+    const onChange = (event: MediaQueryListEvent) => {
+      setIsMobileViewport(event.matches);
+    };
+
+    media.addEventListener("change", onChange);
+    return () => media.removeEventListener("change", onChange);
+  }, []);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -439,6 +454,24 @@ export default function Chat() {
     inputRef.current?.focus();
   }
 
+  function toggleSidebar() {
+    setSidebarOpen((prev) => {
+      const next = !prev;
+      if (isMobileViewport && next) setRightOpen(false);
+      return next;
+    });
+  }
+
+  function toggleRightPanel() {
+    setRightOpen((prev) => {
+      const next = !prev;
+      if (isMobileViewport && next) setSidebarOpen(false);
+      return next;
+    });
+  }
+
+  const isAnyMobileMenuOpen = isMobileViewport && (sidebarOpen || rightOpen);
+
   // ─── Render ────────────────────────────────────────────────────────────────
 
   return (
@@ -450,7 +483,7 @@ export default function Chat() {
         {/* painel lateral esquerdo: área do usuário */}
         <div className="header-left">
           <div>
-            <button className="icon-btn" onClick={() => setSidebarOpen((v) => !v)} title="Menu">
+            <button className="icon-btn" onClick={toggleSidebar} title="Menu">
               <Icon.Menu />
             </button>
           </div>
@@ -487,7 +520,7 @@ export default function Chat() {
         <div className="header-right">
           <div
             className={`files-toggle ${rightOpen ? "active" : ""}`}
-            onClick={() => setRightOpen((v) => !v)}
+            onClick={toggleRightPanel}
           >
             <Icon.Folder />
             Arquivos e caminhos
@@ -497,6 +530,15 @@ export default function Chat() {
 
       {/* ── área principal ── */}
       <div className="main-area">
+        {isAnyMobileMenuOpen && (
+          <div
+            className="mobile-backdrop"
+            onClick={() => {
+              setSidebarOpen(false);
+              setRightOpen(false);
+            }}
+          />
+        )}
 
         {/* ── painel lateral esquerdo ── */}
         <aside className={`sidebar ${sidebarOpen ? "" : "closed"}`}>
@@ -575,26 +617,28 @@ export default function Chat() {
           </div>
 
           {/* Input */}
-          <div className="input-area">
-            <div className="input-wrap">
-              <textarea
-                ref={inputRef}
-                className="chat-input"
-                placeholder="Como posso te ajudar hoje?"
-                value={input}
-                rows={1}
-                onChange={(e) => {
-                  setInput(e.target.value);
-                  e.target.style.height = "auto";
-                  e.target.style.height = e.target.scrollHeight + "px";
-                }}
-                onKeyDown={handleKeyDown}
-              />
-              <button className="send-btn" onClick={handleSend} disabled={loading || !input.trim()}>
-                <Icon.Send /> Enviar
-              </button>
+          {!(isMobileViewport && (sidebarOpen || rightOpen)) && (
+            <div className="input-area">
+              <div className="input-wrap">
+                <textarea
+                  ref={inputRef}
+                  className="chat-input"
+                  placeholder="Como posso te ajudar hoje?"
+                  value={input}
+                  rows={1}
+                  onChange={(e) => {
+                    setInput(e.target.value);
+                    e.target.style.height = "auto";
+                    e.target.style.height = e.target.scrollHeight + "px";
+                  }}
+                  onKeyDown={handleKeyDown}
+                />
+                <button className="send-btn" onClick={handleSend} disabled={loading || !input.trim()}>
+                  <Icon.Send /> Enviar
+                </button>
+              </div>
             </div>
-          </div>
+          )}
         </main>
 
         {/* ── painel lateral direito ── */}
