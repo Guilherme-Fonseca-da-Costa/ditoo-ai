@@ -1,4 +1,4 @@
-from database import SessionLocal, User, engine
+from database.db import SessionLocal, User, engine
 import os
 import sys
 import subprocess
@@ -7,6 +7,14 @@ import socket
 import json
 import uuid
 from contextlib import asynccontextmanager
+import os
+from pydantic import BaseModel
+from passlib.context import CryptContext
+from jose import jwt, JWTError
+from fastapi import Depends, HTTPException
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+import datetime
+
 
 os.environ["OLLAMA_NUM_PARALLEL"] = "4"
 os.environ["OLLAMA_MAX_LOADED_MODELS"] = "1"
@@ -31,7 +39,7 @@ import chromadb
 import fitz
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from zeroconf import Zeroconf, ServiceInfo
@@ -195,9 +203,55 @@ def percent_files(percentage):
     result = int((percentage / 10) * 100)
     return result
 
-@app.get("/login")
-def get_users():
-    return User.query(User).all()
+class UserCreate(BaseModel):
+    username: str
+    password: str
+
+SECRET_KEY = os.getenv("SECRET_KEY")
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+security = HTTPBearer()
+
+def current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    token = credentials.credentials
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
+        user_id = payload.get("user_id")
+        if user_id is None:
+            raise HTTPException(status_code=401, detail="Invalid token")
+        return user_id
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Invalid token")
+    
+#API de autenticação para registro e login de usuários, protegendo o endpoint de perguntas para usuários autenticados
+    
+@app.post("/register")
+def register(user: UserCreate):
+    db = SessionLocal()
+    if db.query(User).filter_by(username=user.username).first():
+        raise HTTPException(status_code=400, detail="Usuário já existe")
+    
+    novo_user = User(
+        username=user.username,
+        password=pwd_context.hash(user.password)
+    )
+    db.add(novo_user)
+    db.commit()
+    return {"message": "Usuário criado!"}
+
+@app.post("/login")
+def login(user: UserCreate):
+    db = SessionLocal()
+    db_user = db.query(User).filter_by(username=user.username).first()
+    
+    if not db_user or not pwd_context.verify(user.password, db_user.password):
+        raise HTTPException(status_code=401, detail="Credenciais inválidas")
+    
+    token = jwt.encode({
+        "sub": user.username,
+        "exp": datetime.datetime.utcnow() + datetime.timedelta(hours=8)
+    }, SECRET_KEY, algorithm="HS256")
+    
+    return {"token": token}
 
 # Endpoint para receber perguntas, consultar o ChromaDB e retornar respostas geradas pelo modelo
 @app.post("/ask")
@@ -297,11 +351,12 @@ async def answer(request_data: Ask):
 # Servir frontend React se a pasta dist existir
 DIST_PATH = os.path.join(BASE_PATH, "dist")
 if os.path.exists(DIST_PATH):
-    app.mount("/", StaticFiles(directory=DIST_PATH, html=True), name="frontend")
-    print("Pasta dist encontrada, frontend será servido")
-else:
-    print("Pasta dist não encontrada, frontend não será servido")
+    app.mount("/assets", StaticFiles(directory=os.path.join(DIST_PATH, "assets")), name="assets")
 
+    @app.get("/{full_path:path}")
+    async def serve_frontend(full_path: str):
+        index = os.path.join(DIST_PATH, "index.html")
+        return FileResponse(index)
 
 # Comando para rodar o servidor | python -m uvicorn engine:app --host 0.0.0.0 --port 8000 --reload
 #  Comando para buildar o executável:
