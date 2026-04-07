@@ -1,5 +1,6 @@
 engine/documentos
 engine/database/ditoo.db
+engine/ditoo.db
 engine/dist
 engine/build
 engine/ditoo-server.spec

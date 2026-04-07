@@ -1,6 +1,16 @@
+import os
+
+from pydantic import BaseModel
 from sqlalchemy import create_engine, Column, String, Integer
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
+
+from passlib.context import CryptContext
+from jose import jwt, JWTError
+from fastapi import Depends, HTTPException
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+import datetime
+
 
 engine = create_engine('sqlite:///./ditoo.db')
 SessionLocal = sessionmaker(bind=engine)
@@ -48,3 +58,4 @@ db = SessionLocal()
 users = db.query(User).filter(User.email == "john@example.com").all()
 print(f"Users in database: {[user.name for user in users]}")
 """
+
