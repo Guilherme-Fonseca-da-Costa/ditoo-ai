@@ -729,3 +729,99 @@ body {
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   border-left: 1.5px solid var(--border);
 }
+
+/* ─── Mobile only: side menus over chat, compact spacing ───────────────────── */
+@media (max-width: 900px) {
+  .main-area {
+    position: relative;
+  }
+
+  .mobile-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.34);
+    backdrop-filter: blur(1px);
+    z-index: 20;
+  }
+
+  .chat-area {
+    width: 100%;
+  }
+
+  .messages {
+    padding: 16px 14px;
+  }
+
+  .input-area {
+    padding: 8px 12px 12px;
+  }
+
+  .sidebar,
+  .right-panel {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: min(82vw, 280px);
+    max-width: 280px;
+    opacity: 1;
+    z-index: 30;
+    transition: transform var(--transition), opacity var(--transition);
+    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.28);
+  }
+
+  .sidebar {
+    left: 0;
+    transform: translateX(0);
+  }
+
+  .right-panel {
+    right: 0;
+    transform: translateX(0);
+  }
+
+  .sidebar.closed {
+    width: min(82vw, 280px);
+    opacity: 0;
+    transform: translateX(-104%);
+    pointer-events: none;
+  }
+
+  .right-panel.closed {
+    width: min(82vw, 280px);
+    opacity: 0;
+    transform: translateX(104%);
+    pointer-events: none;
+  }
+
+  .sidebar-inner,
+  .rp-inner {
+    width: 100%;
+    padding: 10px 8px;
+  }
+
+  .new-chat-btn {
+    margin-bottom: 10px;
+    padding: 7px 10px;
+    font-size: 12px;
+  }
+
+  .section-label,
+  .rp-title {
+    font-size: 9px;
+    margin-bottom: 4px;
+  }
+
+  .history-item {
+    font-size: 12px;
+    padding: 6px 8px;
+    gap: 6px;
+  }
+
+  .source-card {
+    padding: 9px 10px;
+  }
+
+  .empty-rp {
+    padding: 20px 10px;
+  }
+}
