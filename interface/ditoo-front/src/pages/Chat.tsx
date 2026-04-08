@@ -150,7 +150,13 @@ function SourceCard({ source, index }: { source: Source; index: number }) {
 
 function ConfigPanel({ onClose }: { onClose: () => void }) {
   console.log("renderizando ConfigPanel");
-  return <Config/>
+  return (
+    <div className="config-overlay" onClick={onClose}>
+      <div className="config-modal" onClick={(e) => e.stopPropagation()}>
+        <Config />
+      </div>
+    </div>
+  )
 }
 
 // painel de aparência
