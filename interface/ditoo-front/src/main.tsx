@@ -9,6 +9,7 @@ import Chat from "./pages/Chat";
 import LoginPage from "./pages/LoginPage";
 import NotFound from "./pages/NotFound";
 
+
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <ThemeProvider>
