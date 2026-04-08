@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import DitooLogo from "../components/DitooLogo";
 import { useTheme, ACCENT_COLORS, type AccentColor } from "../context/ThemeContext";
+import Config from "../pages/Config";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -102,6 +103,8 @@ const Icon = {
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
+
+
 // indicador de digitação da ia
 function TypingIndicator() {
   return (
@@ -141,6 +144,13 @@ function SourceCard({ source, index }: { source: Source; index: number }) {
       </div>
     </div>
   );
+}
+
+// painel de configurações do usuário modelo de LLM, gerenciar pastas e usuários (se for admin)
+
+function ConfigPanel({ onClose }: { onClose: () => void }) {
+  console.log("renderizando ConfigPanel");
+  return <Config/>
 }
 
 // painel de aparência
@@ -237,6 +247,7 @@ export default function Chat() {
   const [rightOpen, setRightOpen] = useState(() => !isMobileViewport);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showAppear, setShowAppear] = useState(false);
+  const [showConfig, setShowConfig] = useState(false);
   const [activeSources, setActiveSources] = useState<Source[]>([]);
 
   // histórico de conversas
@@ -502,7 +513,9 @@ export default function Chat() {
                 <div className="dropdown-item" onClick={() => { setShowAppear((v) => !v); setShowUserMenu(false); }}>
                   <Icon.Sun /> Aparência
                 </div>
-                <div className="dropdown-item"><Icon.Settings /> Configurações</div>
+                <div className="dropdown-item" onClick={() => { setShowConfig((v) => !v); setShowUserMenu(false); }}>
+                  <Icon.Settings /> Configurações
+                </div>
                 <hr className="dropdown-sep" />
                 <div className="dropdown-item danger"><Icon.Logout /> Sair</div>
               </div>
@@ -570,7 +583,8 @@ export default function Chat() {
               <div className="history-item" onClick={(e) => { e.stopPropagation(); setShowAppear((v) => !v); }}>
                 <Icon.Sun /> Aparência
               </div>
-              <div className="history-item"><Icon.Settings /> Configurações</div>
+              <div onClick={(e) => {e.stopPropagation(); setShowConfig((v) => !v); }} className="history-item"><Icon.Settings /> Configurações</div>
+              {showConfig && <ConfigPanel onClose={() => setShowConfig(false)} />}
             </div>
           </div>
         </aside>
