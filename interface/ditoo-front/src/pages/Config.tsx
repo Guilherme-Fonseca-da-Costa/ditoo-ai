@@ -1,8 +1,9 @@
 import { useState } from "react";
+import "../assets/configPage.css";
 
 export default function Config() {
   const [selectedConfig, setSelectedConfig] = useState("user");
-  const [isAdmin, setIsAdmin] = useState(true); // Simulação de permissão de admin, vou substituir por lógica real
+  const [isAdmin] = useState(true); // Simulação de permissão de admin, vou substituir por lógica real
   const [model, setModel] = useState("deepseek-r1:8b");
   return (
     <div id="configPage">
