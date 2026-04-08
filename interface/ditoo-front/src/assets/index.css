@@ -61,6 +61,7 @@ body {
   display: flex;
   flex-direction: column;
   height: 100vh;
+  min-height: 100dvh;
   width: 100vw;
   overflow: hidden;
 }
@@ -732,6 +733,17 @@ body {
 
 /* ─── Mobile only: side menus over chat, compact spacing ───────────────────── */
 @media (max-width: 900px) {
+  html, body, #root {
+    height: -webkit-fill-available;
+  }
+
+  .app-shell {
+    height: 100dvh;
+    min-height: 100svh;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
   .main-area {
     position: relative;
   }
