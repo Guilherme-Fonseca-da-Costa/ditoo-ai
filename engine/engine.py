@@ -157,8 +157,11 @@ app.add_middleware(
 
 
 # Splitter --- Divide o texto em blocos menores para indexação
-def splitter(texto, chunk_length=500):
-    return [texto[i:i+chunk_length] for i in range(0, len(texto), chunk_length)]
+def splitter(texto, chunk_length=800, overlap=400):
+    chunks = []
+    for i in range(0, len(texto), chunk_length - overlap):
+        chunks.append(texto[i:i + chunk_length])
+    return chunks
 
 
 # Carregar documentos com caminho absoluto
@@ -256,54 +259,90 @@ def login(user: UserCreate):
 # Endpoint para receber perguntas, consultar o ChromaDB e retornar respostas geradas pelo modelo
 @app.post("/ask")
 async def answer(request_data: Ask):
-    resultsRank = results = collection.query(query_texts=[request_data.texto], n_results=5)
+    percentResult = 0
+    max_fonts = 3
+    context_parts = []
+    fonts = []
+    smlFonts = {}
+    winnerFont = None
+    MIN_GAP = 0.15
 
-    fontes_com_pontos = {}
+    results = collection.query(
+        query_texts=[request_data.texto],
+        n_results=10,
+        include=["documents", "metadatas", "distances"]
+    )
+
+    rawScores = {}
+    for i, meta in enumerate(results['metadatas'][0]):
+        archive = meta["fonte"]
+        distance = results['distances'][0][i]
+        slm = 1 / (1 + distance)
+        if slm > rawScores.get(archive, 0):
+            rawScores[archive] = slm
+
+    bestDistance = results['distances'][0][0] if results['distances'] and results['distances'][0] else None
+    print(f"DEBUG: Distância do resultado mais relevante: {bestDistance}")
+    print(f"Distâncias: {results['distances']}")
+
+    # conta chunks reais de cada arquivo no índice completo
+    all_metas = collection.get(include=["metadatas"])["metadatas"]
+    chunk_counts = {}
+    for meta in all_metas:
+        fonte = meta["fonte"]
+        chunk_counts[fonte] = chunk_counts.get(fonte, 0) + 1
 
     if results['metadatas'] and results['metadatas'][0]:
         for i, meta in enumerate(results['metadatas'][0]):
-            arquivo = meta['fonte']
-            pontos = 5 - i
-            fontes_com_pontos[arquivo] = fontes_com_pontos.get(arquivo, 0) + pontos
+            archive = meta["fonte"]
+            distances = results['distances'][0][i]
+            slm = 1 / (1 + distances)
+            if slm > smlFonts.get(archive, 0):
+                smlFonts[archive] = slm
 
-        percentResult = percent_files(fontes_com_pontos[max(fontes_com_pontos, key=fontes_com_pontos.get)])
-        print(f"DEBUG: Pontuação de fontes: {fontes_com_pontos}")
-        print(f"DEBUG: porcentagem de concordância: {percentResult}%")
+        # penaliza pelo tamanho real do arquivo
+        for arquivo in smlFonts:
+            total_chunks = chunk_counts.get(arquivo, 1)
+            smlFonts[arquivo] = smlFonts[arquivo] / (1 + 0.01 * total_chunks)
 
-        fonte_vencedora = max(fontes_com_pontos, key=fontes_com_pontos.get)
+    fonts = [meta['fonte'] for meta in results["metadatas"][0]]
+    print(f"DEBUG: Similaridade por fonte: {smlFonts}")
+    print(f"DEBUG: Chunks reais por arquivo: {chunk_counts}")
 
-    if fonte_vencedora:
-        results = collection.query(
-            query_texts=[request_data.texto],
-            n_results=5,
-            where={"fonte": fonte_vencedora},
-            include=["documents", "metadatas", "distances"]
-        )
+    winnerFont = max(smlFonts, key=smlFonts.get)
+    max_score = smlFonts[winnerFont]
 
-    sortedFonts = sorted(fontes_com_pontos.items(), key=lambda x: x[1], reverse=True)
-    bestDistance = results['distances'][0][0] if results['distances'] and results['distances'][0] else None
-    print(f"DEBUG: Distância do resultado mais relevante: {bestDistance}")
+    winnerFonts = [
+        fonte for fonte, score in smlFonts.items()
+        if max_score - score <= MIN_GAP
+    ]
+    print(f"DEBUG: Fontes vencedoras ({MIN_GAP}): {winnerFonts}")
 
-    distanceLimit = 1.1
-    # Se a melhor distância for maior que o limite, considerar a segunda melhor fonte
-    if bestDistance and bestDistance > distanceLimit and len(sortedFonts) > 1:
-        print(f"DEBUG: Distância {bestDistance} é maior que o limite {distanceLimit}. Considerando a segunda melhor fonte.")
-        segundaMelhorFonte = sortedFonts[1][0]
-        results = collection.query(
-            query_texts=[request_data.texto],
-            n_results=5,
-            where={"fonte": segundaMelhorFonte},
-            include=["documents", "metadatas", "distances"]
-        )
-        fonte_vencedora = segundaMelhorFonte
+    best_raw = max(rawScores[f] for f in winnerFonts)
+    winnerFonts = sorted(winnerFonts, key=lambda f: smlFonts[f], reverse=True)
 
-    if results['metadatas'] and results['metadatas'][0]:
-        fontes = [meta['fonte'] for meta in results['metadatas'][0]]
-        print(f"DEBUG: Consultando trechos dos arquivos: {list(set(fontes))}")
+    percents = {
+        fonte: round((rawScores[fonte] / best_raw) * 100)
+        for fonte in winnerFonts
+    }
+    print(f"DEBUG: Percentuais por fonte: {percents}")
+    
 
     if results['documents'] and results['documents'][0]:
-        contexto = "\n---\n".join(results['documents'][0])
-        print(f"DEBUG: Contexto construído com {contexto}.")
+        fonte_para_chunks = {}
+        for i, meta in enumerate(results['metadatas'][0]):
+            fonte = meta['fonte']
+            texto = results['documents'][0][i]
+            fonte_para_chunks.setdefault(fonte, []).append(texto)
+
+        for fonte in winnerFonts[:max_fonts]:
+            chunks = fonte_para_chunks.get(fonte, [])
+            textos = "\n---\n".join(chunks)
+            context_parts.append(f"### {fonte}\n{textos}")
+
+        contexto = "\n\n".join(context_parts)
+        print(f"Contexto atual: {contexto}")
+
     else:
         contexto = "Nenhum contexto encontrado."
         print(f"DEBUG: Sem Contexto construído com {contexto}.")
@@ -320,7 +359,7 @@ async def answer(request_data: Ask):
     """
 
     id_resposta = str(uuid.uuid4())
-    # Gerar resposta em streaming usando o modelo do Ollama e enviar atualizações para o frontend
+
     def generate():
         print(f"id_resposta:{id_resposta}")
         yield json.dumps({"type": "id", "id": id_resposta}) + "\n"
@@ -340,9 +379,9 @@ async def answer(request_data: Ask):
                 "type": "content",
                 "text": content,
                 "id": id_resposta,
-                "fontes": fontes,
-                "winner": fonte_vencedora,
-                "percent": percentResult
+                "fontes": fonts,
+                "winner": winnerFonts,
+                "percent": percents
             }) + "\n"
 
     return StreamingResponse(generate(), media_type="application/x-ndjson")
