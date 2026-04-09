@@ -7,6 +7,7 @@ import socket
 import json
 import uuid
 from contextlib import asynccontextmanager
+import openpyxl
 import os
 from pydantic import BaseModel
 from passlib.context import CryptContext
@@ -113,6 +114,7 @@ class WatchFolder(FileSystemEventHandler):
     def on_created(self, event):
         if not event.is_directory:
             print(f"\n🆕 Novo arquivo detectado: {event.src_path}")
+            time.sleep(1)
             self.index_folder(event.src_path)
     
     def index_folder(self, caminho):
@@ -126,6 +128,8 @@ class WatchFolder(FileSystemEventHandler):
             doc = fitz.open(caminho)
             for pag in doc:
                 complete_text += pag.get_text()
+        elif file_name.endswith(".xlsx"):
+            complete_text = readXLSX(caminho)
 
         if complete_text:
             chunks = splitter(complete_text)
@@ -139,6 +143,17 @@ class WatchFolder(FileSystemEventHandler):
 
 if not os.path.exists(DOCS_PATH):
     os.makedirs(DOCS_PATH)
+
+def readXLSX(caminho):
+    wb = openpyxl.load_workbook(caminho, data_only=True)
+    text = ""
+    for sheet in wb.worksheets:
+        text += f"\n### Aba: {sheet.title}\n"
+        for row in sheet.iter_rows(values_only=True):
+            line = " | ".join(str(cell) for cell in row if cell is not None)
+            if line:
+                text += line + "\n"
+    return text
 
 FileObserver = Observer()
 FileObserver.schedule(WatchFolder(), path=DOCS_PATH, recursive=False)
