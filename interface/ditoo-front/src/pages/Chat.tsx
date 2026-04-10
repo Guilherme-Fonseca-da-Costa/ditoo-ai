@@ -963,21 +963,21 @@ export default function Chat() {
                   onKeyDown={handleKeyDown}
                 />
                 <button
-                  className="send-btn"
+                  className="model-btn"
                   onClick={(e) => {
                     e.stopPropagation();
                     setShowModel((v) => !v);
                   }}
                   disabled={loading}
                 >
-                  <Icon.ModelSwitch /> {selectedModel}
+                  <Icon.ModelSwitch /> <span>{selectedModel}</span>
                 </button>
                 <button
                   className="send-btn"
                   onClick={handleSend}
                   disabled={loading || !input.trim()}
                 >
-                  <Icon.Send /> Enviar
+                  <Icon.Send /> <span>Enviar</span>
                 </button>
               </div>
             </div>
