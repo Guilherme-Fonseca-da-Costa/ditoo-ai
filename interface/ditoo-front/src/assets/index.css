@@ -1047,11 +1047,7 @@ body {
     height: -webkit-fill-available;
   }
 
-  .model-btn span {
-    display: none;
-  }
-
-  .send-btn span {
+  .noText-btn span {
     display: none;
   }
 
