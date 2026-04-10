@@ -367,7 +367,9 @@ async def answer(request_data: Ask):
     Responda sempre em Português do Brasil.
     Use APENAS o CONTEXTO abaixo para responder à pergunta.
     Se a resposta não estiver no CONTEXTO, diga exatamente: "Não encontrei essa informação nos arquivos."
-    Não responda nada fora do contexto fornecido.
+    Não invente informações. Não use conhecimento externo.
+    Se a informação estiver parcialmente no contexto, responda com o que houver disponível.
+    Seja direto e objetivo na resposta.
     
     CONTEXTO:
     {contexto}
