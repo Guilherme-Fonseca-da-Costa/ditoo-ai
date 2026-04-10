@@ -176,6 +176,30 @@ const Icon = {
       <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" />
     </svg>
   ),
+  FolderSwitch: () => (
+    <svg
+      width="13px"
+      height="13px"
+      viewBox="0 0 16 16"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      stroke="#ffffff"
+    >
+      <g id="SVGRepo_bgCarrier" stroke-width="0"></g>
+      <g
+        id="SVGRepo_tracerCarrier"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+      ></g>
+      <g id="SVGRepo_iconCarrier">
+        {" "}
+        <path
+          d="M0 1H5L8 3H13V5H3.7457L2.03141 11H4.11144L5.2543 7H16L14 14H0V1Z"
+          fill="#ffffff"
+        ></path>{" "}
+      </g>
+    </svg>
+  ),
   ModelSwitch: () => (
     <svg
       width="13px"
@@ -963,7 +987,17 @@ export default function Chat() {
                   onKeyDown={handleKeyDown}
                 />
                 <button
-                  className="model-btn"
+                  className="send-btn noText-btn"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShowModel((v) => !v);
+                  }}
+                  disabled={loading}
+                >
+                  <Icon.FolderSwitch /> <span>Documentos</span>
+                </button>
+                <button
+                  className="send-btn noText-btn"
                   onClick={(e) => {
                     e.stopPropagation();
                     setShowModel((v) => !v);
@@ -973,7 +1007,7 @@ export default function Chat() {
                   <Icon.ModelSwitch /> <span>{selectedModel}</span>
                 </button>
                 <button
-                  className="send-btn"
+                  className="send-btn noText-btn"
                   onClick={handleSend}
                   disabled={loading || !input.trim()}
                 >
