@@ -289,6 +289,22 @@ body {
   animation: fadeIn 0.15s ease;
   z-index: 20;
 }
+
+.model-panel {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  background: var(--surface);
+  margin: 10px;
+  border: 0.5px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 12px;
+  box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.25);
+  animation: fadeIn 0.15s ease;
+  z-index: 20;
+}
+
 .appear-row {
   display: flex;
   align-items: center;
@@ -474,6 +490,7 @@ body {
   padding: 12px 24px 20px;
   border-top: 0.5px solid var(--border);
   flex-shrink: 0;
+  position: relative;
 }
 .input-wrap {
   display: flex;
