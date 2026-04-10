@@ -176,6 +176,44 @@ const Icon = {
       <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" />
     </svg>
   ),
+  ModelSwitch: () => (
+    <svg
+      width="13px"
+      height="13px"
+      viewBox="-4.8 -4.8 57.60 57.60"
+      xmlns="http://www.w3.org/2000/svg"
+      fill="#ffffff"
+      stroke="#ffffff"
+    >
+      <g id="SVGRepo_bgCarrier" stroke-width="0"></g>
+      <g
+        id="SVGRepo_tracerCarrier"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        stroke="#CCCCCC"
+        stroke-width="0.192"
+      ></g>
+      <g id="SVGRepo_iconCarrier">
+        {" "}
+        <title>ai</title>{" "}
+        <g id="Layer_2" data-name="Layer 2">
+          {" "}
+          <g id="invisible_box" data-name="invisible box">
+            {" "}
+          </g>{" "}
+          <g id="Q3_icons" data-name="Q3 icons">
+            {" "}
+            <g>
+              {" "}
+              <path d="M45.6,18.7,41,14.9V7.5a1,1,0,0,0-.6-.9L30.5,2.1h-.4l-.6.2L24,5.9,18.5,2.2,17.9,2h-.4L7.6,6.6a1,1,0,0,0-.6.9v7.4L2.4,18.7a.8.8,0,0,0-.4.8v9H2a.8.8,0,0,0,.4.8L7,33.1v7.4a1,1,0,0,0,.6.9l9.9,4.5h.4l.6-.2L24,42.1l5.5,3.7.6.2h.4l9.9-4.5a1,1,0,0,0,.6-.9V33.1l4.6-3.8a.8.8,0,0,0,.4-.7V19.4h0A.8.8,0,0,0,45.6,18.7Zm-5.1,6.8H42v1.6l-3.5,2.8-.4.3-.4-.2a1.4,1.4,0,0,0-2,.7,1.5,1.5,0,0,0,.6,2l.7.3h0v5.4l-6.6,3.1-4.2-2.8-.7-.5V25.5H27a1.5,1.5,0,0,0,0-3H25.5V9.7l.7-.5,4.2-2.8L37,9.5v5.4h0l-.7.3a1.5,1.5,0,0,0-.6,2,1.4,1.4,0,0,0,1.3.9l.7-.2.4-.2.4.3L42,20.9v1.6H40.5a1.5,1.5,0,0,0,0,3ZM21,25.5h1.5V38.3l-.7.5-4.2,2.8L11,38.5V33.1h0l.7-.3a1.5,1.5,0,0,0,.6-2,1.4,1.4,0,0,0-2-.7l-.4.2-.4-.3L6,27.1V25.5H7.5a1.5,1.5,0,0,0,0-3H6V20.9l3.5-2.8.4-.3.4.2.7.2a1.4,1.4,0,0,0,1.3-.9,1.5,1.5,0,0,0-.6-2L11,15h0V9.5l6.6-3.1,4.2,2.8.7.5V22.5H21a1.5,1.5,0,0,0,0,3Z"></path>{" "}
+              <path d="M13.9,9.9a1.8,1.8,0,0,0,0,2.2l2.6,2.5v2.8l-4,4v5.2l4,4v2.8l-2.6,2.5a1.8,1.8,0,0,0,0,2.2,1.5,1.5,0,0,0,1.1.4,1.5,1.5,0,0,0,1.1-.4l3.4-3.5V29.4l-4-4V22.6l4-4V13.4L16.1,9.9A1.8,1.8,0,0,0,13.9,9.9Z"></path>{" "}
+              <path d="M31.5,14.6l2.6-2.5a1.8,1.8,0,0,0,0-2.2,1.8,1.8,0,0,0-2.2,0l-3.4,3.5v5.2l4,4v2.8l-4,4v5.2l3.4,3.5a1.7,1.7,0,0,0,2.2,0,1.8,1.8,0,0,0,0-2.2l-2.6-2.5V30.6l4-4V21.4l-4-4Z"></path>{" "}
+            </g>{" "}
+          </g>{" "}
+        </g>{" "}
+      </g>
+    </svg>
+  ),
   Send: () => (
     <svg
       width="13"
@@ -305,6 +343,49 @@ function AppearancePanel({ onClose }: { onClose: () => void }) {
   );
 }
 
+// painel de modelos
+
+function ModelPanel({
+  onClose,
+  selected,
+  onSelect,
+}: {
+  onClose: () => void;
+  selected: string;
+  onSelect: (model: string) => void;
+}) {
+  const models = ["deepseek-r1:8b", "qwen2.5:7b", "llama3.1:8b"];
+
+  return (
+    <div className="model-panel" onClick={(e) => e.stopPropagation()}>
+      <div className="appear-row column">
+        <span>Modelos</span>
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: 6,
+            marginTop: 4,
+          }}
+        >
+          {models.map((m) => (
+            <div
+              key={m}
+              className={`history-item ${selected === m ? "active" : ""}`}
+              onClick={() => {
+                onSelect(m);
+                onClose();
+              }}
+            >
+              <Icon.ModelSwitch /> {m}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // histórico de conversas, agrupado por tópico/pergunta
 function HistoryEntry({
   item,
@@ -370,8 +451,10 @@ export default function Chat() {
   const [rightOpen, setRightOpen] = useState(() => !isMobileViewport);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showAppear, setShowAppear] = useState(false);
+  const [showModel, setShowModel] = useState(false);
   const [showConfig, setShowConfig] = useState(false);
   const [activeSources, setActiveSources] = useState<Source[]>([]);
+  const [selectedModel, setSelectedModel] = useState("deepseek-r1:8b");
 
   // histórico de conversas
   const [history, setHistory] = useState<HistoryItem[]>([]);
@@ -469,7 +552,7 @@ export default function Chat() {
                 lastSources = (data.winner as string[]).map((name) => ({
                   name,
                   path: `Ditoo/documentos/`,
-                  percent: data.percent[name] ?? 0
+                  percent: data.percent[name] ?? 0,
                 }));
               }
             }
@@ -650,6 +733,7 @@ export default function Chat() {
       onClick={() => {
         showUserMenu && setShowUserMenu(false);
         showAppear && setShowAppear(false);
+        showModel && setShowModel(false);
       }}
     >
       {/* ── Header ── */}
@@ -857,6 +941,13 @@ export default function Chat() {
           {/* Input */}
           {!(isMobileViewport && (sidebarOpen || rightOpen)) && (
             <div className="input-area">
+              {showModel && (
+                <ModelPanel
+                  selected={selectedModel}
+                  onSelect={(m) => setSelectedModel(m)}
+                  onClose={() => setShowModel(false)}
+                />
+              )}
               <div className="input-wrap">
                 <textarea
                   ref={inputRef}
@@ -871,6 +962,16 @@ export default function Chat() {
                   }}
                   onKeyDown={handleKeyDown}
                 />
+                <button
+                  className="send-btn"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShowModel((v) => !v);
+                  }}
+                  disabled={loading}
+                >
+                  <Icon.ModelSwitch /> {selectedModel}
+                </button>
                 <button
                   className="send-btn"
                   onClick={handleSend}
