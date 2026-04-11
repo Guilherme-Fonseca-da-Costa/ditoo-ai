@@ -77,7 +77,12 @@ DIST_PATH = get_dist_path()
 DOCS_PATH = os.path.join(BASE_PATH, "documentos")
 VENV_PATH = os.path.join(BASE_PATH, "vetores_db")
 ENV_PATH = os.path.join(BASE_PATH, ".env")
-MODEL = "deepseek-r1:8b"
+MODEL = "qwen2.5:7b"
+
+#Modelos:
+
+#qwen2.5:7b Muito Rápido
+#deepseek-r1:8b
 
 # --- CRIA .env SE NÃO EXISTIR ---
 def env_create():
