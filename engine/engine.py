@@ -280,7 +280,7 @@ def register(user: UserCreate):
     db.commit()
     return {"message": "Usuário criado!"}
 
-@app.post("/login")
+@app.post("/loginUser")
 def login(user: UserCreate):
     db = SessionLocal()
     db_user = db.query(User).filter_by(username=user.username).first()
