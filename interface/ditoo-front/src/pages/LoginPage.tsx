@@ -11,7 +11,7 @@ export default function LoginPage() {
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     // TODO: conectar com autenticação real
-//    navigate("/chat");
+   navigate("/chat");
     api.getToken()
   }
 
