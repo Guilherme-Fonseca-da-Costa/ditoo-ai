@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router";
 import DitooLogo from "../components/DitooLogo";
+import { api } from "../services/api";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
@@ -10,7 +11,8 @@ export default function LoginPage() {
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     // TODO: conectar com autenticação real
-    navigate("/chat");
+//    navigate("/chat");
+    api.getToken()
   }
 
   return (
