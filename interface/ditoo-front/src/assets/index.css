@@ -429,6 +429,24 @@ body {
   border: 0.5px solid var(--border);
 }
 
+.bubble.ai h1, .bubble.ai h2, .bubble.ai h3 {
+  font-size: 14px;
+  font-weight: 600;
+  margin: 8px 0 4px;
+  color: var(--text);
+}
+.bubble.ai strong { font-weight: 600; color: var(--text); }
+.bubble.ai ul, .bubble.ai ol { padding-left: 16px; margin: 4px 0; }
+.bubble.ai li { margin: 2px 0; }
+.bubble.ai code {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  background: var(--surface2);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+.bubble.ai p { margin: 4px 0; }
+
 .added-archive:hover{
   scale: 1.05;
   cursor: pointer;

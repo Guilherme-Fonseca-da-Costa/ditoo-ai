@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type DragEvent } from "react";
 import DitooLogo from "../components/DitooLogo";
+import ReactMarkdown from 'react-markdown'
 import {
   useTheme,
   ACCENT_COLORS,
@@ -588,6 +589,7 @@ function ModelPanel({
               key={m}
               className={`history-item ${selected === m ? "active" : ""}`}
               onClick={() => {
+                api.changeModel(m);
                 onSelect(m);
                 onClose();
               }}
@@ -1135,7 +1137,7 @@ export default function Chat() {
                       {msg.sender === "user" ? "Você" : "Ditoo"}
                     </div>
                     <div className={`bubble ${msg.sender}`}>
-                      {msg.text}
+                      <ReactMarkdown>{msg.text}</ReactMarkdown>
                       {msg.sender === "ai" &&
                         msg.sources &&
                         msg.sources.length > 0 && (
