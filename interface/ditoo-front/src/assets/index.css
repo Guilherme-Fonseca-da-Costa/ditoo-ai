@@ -15,6 +15,7 @@
   --bg: #0e0e0e;
   --surface: #181818;
   --surface2: #222222;
+  --surface3: #111111;
   --border: #2c2c2c;
   --text: #ebebeb;
   --muted: #999999;
@@ -25,6 +26,7 @@
   --bg: #f7f6f3;
   --surface: #ffffff;
   --surface2: #f0efe9;
+  --surface3: #eeeeee;
   --border: #e2e0d9;
   --text: #181818;
   --muted: #777777;
@@ -384,6 +386,53 @@ body {
   box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.25);
   animation: fadeIn 0.15s ease;
   z-index: 20;
+}
+
+#uploadArea{
+  background: var(--surface3);
+  border-radius: 15px;
+  width: 300px;
+  height: 200px;
+  border: solid 1px rgb(49, 49, 49);
+  transition: all 0.1s;
+}
+
+#uploadArea:hover{
+   scale: 1.02;
+}
+
+.upload-panel {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  right: 0;
+  background: var(--surface);
+  margin: 10px;
+  border: 0.5px solid var(--border);
+  margin-right: 50px;
+  border-radius: var(--radius-md);
+  padding: 12px;
+  box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.25);
+  animation: fadeIn 0.15s ease;
+  z-index: 20;
+}
+
+.added-archive{
+  display: flex;
+  align-items: center;
+  padding: 10px;
+  margin: 10px;
+  font-size: 1.2em;
+  background: var(--surface3);
+  border-radius: 15px;
+  animation: fadeIn 0.15s ease;
+  transition: all 0.4s;
+  border: 0.5px solid var(--border);
+}
+
+.added-archive:hover{
+  scale: 1.05;
+  cursor: pointer;
+  border: 0.5px solid rgb(141, 15, 15);
 }
 
 .model-panel {
