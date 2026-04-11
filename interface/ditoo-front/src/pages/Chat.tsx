@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type DragEvent } from "react";
 import DitooLogo from "../components/DitooLogo";
 import {
   useTheme,
@@ -6,6 +6,7 @@ import {
   type AccentColor,
 } from "../context/ThemeContext";
 import Config from "../pages/Config";
+import { api } from "../services/api";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -176,14 +177,56 @@ const Icon = {
       <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" />
     </svg>
   ),
-  FolderSwitch: () => (
+  PDF: () => (
     <svg
-      width="13px"
-      height="13px"
-      viewBox="0 0 16 16"
+      width="50"
+      height="50"
+      viewBox="0 0 512 512"
+      version="1.1"
+      xmlns="http://www.w3.org/2000/svg"
+      fill="#000000"
+    >
+      <g id="SVGRepo_bgCarrier" stroke-width="0"></g>
+      <g
+        id="SVGRepo_tracerCarrier"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+      ></g>
+      <g id="SVGRepo_iconCarrier">
+        {" "}
+        <title>pdf-document</title>{" "}
+        <g
+          id="Page-1"
+          stroke="none"
+          stroke-width="1"
+          fill="none"
+          fill-rule="evenodd"
+        >
+          {" "}
+          <g
+            id="add"
+            fill="#787878"
+            transform="translate(85.333333, 42.666667)"
+          >
+            {" "}
+            <path
+              d="M75.9466667,285.653333 C63.8764997,278.292415 49.6246897,275.351565 35.6266667,277.333333 L1.42108547e-14,277.333333 L1.42108547e-14,405.333333 L28.3733333,405.333333 L28.3733333,356.48 L40.5333333,356.48 C53.1304778,357.774244 65.7885986,354.68506 76.3733333,347.733333 C85.3576891,340.027178 90.3112817,328.626053 89.8133333,316.8 C90.4784904,304.790173 85.3164923,293.195531 75.9466667,285.653333 L75.9466667,285.653333 Z M53.12,332.373333 C47.7608867,334.732281 41.8687051,335.616108 36.0533333,334.933333 L27.7333333,334.933333 L27.7333333,298.666667 L36.0533333,298.666667 C42.094796,298.02451 48.1897668,299.213772 53.5466667,302.08 C58.5355805,305.554646 61.3626692,311.370371 61.0133333,317.44 C61.6596233,323.558965 58.5400493,329.460862 53.12,332.373333 L53.12,332.373333 Z M150.826667,277.333333 L115.413333,277.333333 L115.413333,405.333333 L149.333333,405.333333 C166.620091,407.02483 184.027709,403.691457 199.466667,395.733333 C216.454713,383.072462 225.530463,362.408923 223.36,341.333333 C224.631644,323.277677 218.198313,305.527884 205.653333,292.48 C190.157107,280.265923 170.395302,274.806436 150.826667,277.333333 L150.826667,277.333333 Z M178.986667,376.32 C170.098963,381.315719 159.922142,383.54422 149.76,382.72 L144.213333,382.72 L144.213333,299.946667 L149.333333,299.946667 C167.253333,299.946667 174.293333,301.653333 181.333333,308.053333 C189.877212,316.948755 194.28973,329.025119 193.493333,341.333333 C194.590843,354.653818 189.18793,367.684372 178.986667,376.32 L178.986667,376.32 Z M254.506667,405.333333 L283.306667,405.333333 L283.306667,351.786667 L341.333333,351.786667 L341.333333,329.173333 L283.306667,329.173333 L283.306667,299.946667 L341.333333,299.946667 L341.333333,277.333333 L254.506667,277.333333 L254.506667,405.333333 L254.506667,405.333333 Z M234.666667,7.10542736e-15 L9.52127266e-13,7.10542736e-15 L9.52127266e-13,234.666667 L42.6666667,234.666667 L42.6666667,192 L42.6666667,169.6 L42.6666667,42.6666667 L216.96,42.6666667 L298.666667,124.373333 L298.666667,169.6 L298.666667,192 L298.666667,234.666667 L341.333333,234.666667 L341.333333,106.666667 L234.666667,7.10542736e-15 L234.666667,7.10542736e-15 Z"
+              id="document-pdf"
+            >
+              {" "}
+            </path>{" "}
+          </g>{" "}
+        </g>{" "}
+      </g>
+    </svg>
+  ),
+  UploadBox: () => (
+    <svg
+      width="60"
+      height="60"
+      viewBox="0 0 24 24"
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
-      stroke="#ffffff"
     >
       <g id="SVGRepo_bgCarrier" stroke-width="0"></g>
       <g
@@ -194,16 +237,65 @@ const Icon = {
       <g id="SVGRepo_iconCarrier">
         {" "}
         <path
-          d="M0 1H5L8 3H13V5H3.7457L2.03141 11H4.11144L5.2543 7H16L14 14H0V1Z"
-          fill="#ffffff"
+          d="M13.5 3H12H8C6.34315 3 5 4.34315 5 6V18C5 19.6569 6.34315 21 8 21H11M13.5 3L19 8.625M13.5 3V7.625C13.5 8.17728 13.9477 8.625 14.5 8.625H19M19 8.625V11.8125"
+          stroke="#8a8a8a"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
         ></path>{" "}
+        <path
+          d="M17 15V18M17 21V18M17 18H14M17 18H20"
+          stroke="#8a8a8a"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        ></path>{" "}
+      </g>
+    </svg>
+  ),
+  Upload: () => (
+    <svg
+      width="16px"
+      height="16px"
+      viewBox="0 0 1024 1024"
+      version="1.1"
+      xmlns="http://www.w3.org/2000/svg"
+      fill="#000000"
+    >
+      <g id="SVGRepo_bgCarrier" stroke-width="0"></g>
+      <g
+        id="SVGRepo_tracerCarrier"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+      ></g>
+      <g id="SVGRepo_iconCarrier">
+        <path
+          d="M736.68 435.86a173.773 173.773 0 0 1 172.042 172.038c0.578 44.907-18.093 87.822-48.461 119.698-32.761 34.387-76.991 51.744-123.581 52.343-68.202 0.876-68.284 106.718 0 105.841 152.654-1.964 275.918-125.229 277.883-277.883 1.964-152.664-128.188-275.956-277.883-277.879-68.284-0.878-68.202 104.965 0 105.842zM285.262 779.307A173.773 173.773 0 0 1 113.22 607.266c-0.577-44.909 18.09-87.823 48.461-119.705 32.759-34.386 76.988-51.737 123.58-52.337 68.2-0.877 68.284-106.721 0-105.842C132.605 331.344 9.341 454.607 7.379 607.266 5.417 759.929 135.565 883.225 285.262 885.148c68.284 0.876 68.2-104.965 0-105.841z"
+          fill="#ffffff"
+        ></path>
+        <path
+          d="M339.68 384.204a173.762 173.762 0 0 1 172.037-172.038c44.908-0.577 87.822 18.092 119.698 48.462 34.388 32.759 51.743 76.985 52.343 123.576 0.877 68.199 106.72 68.284 105.843 0-1.964-152.653-125.231-275.917-277.884-277.879-152.664-1.962-275.954 128.182-277.878 277.879-0.88 68.284 104.964 68.199 105.841 0z"
+          fill="#ffffff"
+        ></path>
+        <path
+          d="M545.039 473.078c16.542 16.542 16.542 43.356 0 59.896l-122.89 122.895c-16.542 16.538-43.357 16.538-59.896 0-16.542-16.546-16.542-43.362 0-59.899l122.892-122.892c16.537-16.542 43.355-16.542 59.894 0z"
+          fill="#ffffff"
+        ></path>
+        <path
+          d="M485.17 473.078c16.537-16.539 43.354-16.539 59.892 0l122.896 122.896c16.538 16.533 16.538 43.354 0 59.896-16.541 16.538-43.361 16.538-59.898 0L485.17 532.979c-16.547-16.543-16.547-43.359 0-59.901z"
+          fill="#ffffff"
+        ></path>
+        <path
+          d="M514.045 634.097c23.972 0 43.402 19.433 43.402 43.399v178.086c0 23.968-19.432 43.398-43.402 43.398-23.964 0-43.396-19.432-43.396-43.398V677.496c0.001-23.968 19.433-43.399 43.396-43.399z"
+          fill="#ffffff"
+        ></path>
       </g>
     </svg>
   ),
   ModelSwitch: () => (
     <svg
-      width="13px"
-      height="13px"
+      width="16px"
+      height="16px"
       viewBox="-4.8 -4.8 57.60 57.60"
       xmlns="http://www.w3.org/2000/svg"
       fill="#ffffff"
@@ -367,6 +459,105 @@ function AppearancePanel({ onClose }: { onClose: () => void }) {
   );
 }
 
+// painel de upload
+
+function UploadPanel({ onClose }: { onClose: () => void }) {
+  const [files, setFiles] = useState<File[]>([]);
+  const [over, setOver] = useState(false);
+  console.log(over)
+  const inputRef = useRef<HTMLInputElement>(null);
+  const prevent = (e: DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+  };
+
+  async function handleSendFiles(files: File[]) {
+    for (const file of files) {
+      await api.upload(file);
+      console.log("Enviando:", files);
+    }
+    console.log("Enviando:", files);
+  }
+
+  async function handleDrop(e: any) {
+    prevent(e);
+    setOver(false);
+    const dropped = Array.from<File>(e.dataTransfer.files);
+    setFiles((prev) => [...prev, ...dropped]);
+  }
+
+  const removeFile = (index: any) => {
+    setFiles((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  return (
+    <div className="upload-panel" onClick={(e) => e.stopPropagation()}>
+      <div className="appear-row">
+        <div>
+          <span>Upload</span>
+          <input
+            ref={inputRef}
+            type="file"
+            multiple
+            hidden
+            onChange={(e) => {
+              if (!e.target.files) return;
+              const selected = Array.from<File>(e.target.files);
+              setFiles((prev) => [...prev, ...selected]);
+            }}
+          />
+          <div
+            onDragOver={(e) => {
+              prevent(e);
+              setOver(true);
+            }}
+            onDragLeave={(e) => {
+              prevent(e);
+              setOver(false);
+            }}
+            onDrop={handleDrop}
+            id="uploadArea"
+            onClick={() => inputRef.current?.click()}
+            style={{
+              display: "flex",
+              justifyContent: "center",
+              alignItems: "center",
+              flexDirection: "column",
+              gap: 6,
+              marginTop: 4,
+            }}
+          >
+            <Icon.UploadBox />
+          </div>
+        </div>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "flex-start",
+            justifyContent: "flex-start",
+            flexDirection: "column",
+            overflow: "auto",
+            height: 200,
+          }}
+        >
+          {files.map((f, i) => (
+            <div key={i}>
+              <div onClick={() => removeFile(i)} className="added-archive">
+                <Icon.PDF />
+                <div style={{ display: "flex", flexDirection: "column" }}>
+                  <span>{f.name}</span>
+                  <span>{(f.size / 1024).toFixed(1)} KB</span>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+      <button className="send-btn noText-btn" style={{}} onClick={() => {handleSendFiles(files); onClose()} }>Enviar</button>
+    </div>
+  );
+}
+
 // painel de modelos
 
 function ModelPanel({
@@ -476,6 +667,7 @@ export default function Chat() {
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showAppear, setShowAppear] = useState(false);
   const [showModel, setShowModel] = useState(false);
+  const [showUpload, setShowUpload] = useState(false);
   const [showConfig, setShowConfig] = useState(false);
   const [activeSources, setActiveSources] = useState<Source[]>([]);
   const [selectedModel, setSelectedModel] = useState("deepseek-r1:8b");
@@ -758,6 +950,7 @@ export default function Chat() {
         showUserMenu && setShowUserMenu(false);
         showAppear && setShowAppear(false);
         showModel && setShowModel(false);
+        showUpload && setShowUpload(false);
       }}
     >
       {/* ── Header ── */}
@@ -965,6 +1158,9 @@ export default function Chat() {
           {/* Input */}
           {!(isMobileViewport && (sidebarOpen || rightOpen)) && (
             <div className="input-area">
+              {showUpload && (
+                <UploadPanel onClose={() => setShowUpload(false)} />
+              )}
               {showModel && (
                 <ModelPanel
                   selected={selectedModel}
@@ -990,11 +1186,11 @@ export default function Chat() {
                   className="send-btn noText-btn"
                   onClick={(e) => {
                     e.stopPropagation();
-                    setShowModel((v) => !v);
+                    setShowUpload((v) => !v);
                   }}
                   disabled={loading}
                 >
-                  <Icon.FolderSwitch /> <span>Documentos</span>
+                  <Icon.Upload /> <span>Upload</span>
                 </button>
                 <button
                   className="send-btn noText-btn"
