@@ -1,13 +1,25 @@
 // Esse arquivo é responsável por lidar com as chamadas à API do backend. Ele exporta um objeto `api` que contém métodos para interagir com os endpoints do backend, como o método `login` para autenticação.
+const TOKEN_KEY = "ditoo_token";
+
 export const api = {
   login: async (user: string, pass: string) => {
-    const res = await fetch("/login", {
-      method: "GET",
+    const res = await fetch("/loginUser", {
+      method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ username: user, password: pass }),
     });
-    console.log(res);
-    return res.json();
+    console.log(res.json());
+    const data = await res.json();
+    if (data.token) {
+      localStorage.setItem(TOKEN_KEY, data.token);
+    }
+    return data;
+  },
+  getToken: () => {
+    localStorage.getItem(TOKEN_KEY);
+  },
+  isLoggedIn: () => {
+    !!localStorage.getItem(TOKEN_KEY);
   },
   getUsers: async () => {
     const res = await fetch("/users", {
@@ -22,14 +34,13 @@ export const api = {
     await fetch("/upload", { method: "POST", body: formData });
   },
   changeModel: async (model: string) => {
-    console.log(model)
+    console.log(model);
     const res = await fetch("/changeModel", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({model: model}),
+      body: JSON.stringify({ model: model }),
     });
-    console.log(res.json)
-    return res.json
-    
+    console.log(res.json());
+    return res.json();
   },
 };
