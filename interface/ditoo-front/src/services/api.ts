@@ -16,5 +16,10 @@ export const api = {
             headers: { "Content-Type": "application/json" },
         });
         return res.json();
-    }
+    },
+    upload: async (file: File) => {
+    const formData = new FormData();
+    formData.append("file", file); 
+    await fetch("/upload", { method: "POST", body: formData });
+}
 }
