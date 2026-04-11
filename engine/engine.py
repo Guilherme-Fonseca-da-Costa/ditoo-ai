@@ -77,6 +77,7 @@ DIST_PATH = get_dist_path()
 DOCS_PATH = os.path.join(BASE_PATH, "documentos")
 VENV_PATH = os.path.join(BASE_PATH, "vetores_db")
 ENV_PATH = os.path.join(BASE_PATH, ".env")
+MODEL = "deepseek-r1:8b"
 
 # --- CRIA .env SE NÃO EXISTIR ---
 def env_create():
@@ -239,6 +240,10 @@ class UserCreate(BaseModel):
     username: str
     password: str
 
+class Model(BaseModel):
+    model: str
+
+
 SECRET_KEY = os.getenv("SECRET_KEY")
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 security = HTTPBearer()
@@ -255,6 +260,11 @@ def current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
         raise HTTPException(status_code=401, detail="Invalid token")
     
 #API de autenticação para registro e login de usuários, protegendo o endpoint de perguntas para usuários autenticados
+
+@app.post("/changeModel")
+def changeModel(model: Model):
+    MODEL = model
+    print(f"Novo modelo selecionando{MODEL}")
     
 @app.post("/register")
 def register(user: UserCreate):
@@ -408,7 +418,7 @@ async def answer(request_data: Ask):
         stream = await loop.run_in_executor(
             None,  # usa thread pool padrão
             lambda: ollama.chat(
-                model='deepseek-r1:8b',
+                model=MODEL,
                 messages=[
                     {'role': 'system', 'content': prompt_sistema},
                     {'role': 'user', 'content': request_data.texto}
