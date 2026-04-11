@@ -9,10 +9,12 @@ import uuid
 from contextlib import asynccontextmanager
 import openpyxl
 import os
+import asyncio
 from pydantic import BaseModel
 from passlib.context import CryptContext
 from jose import jwt, JWTError
-from fastapi import Depends, HTTPException
+from fastapi import Depends, HTTPException, UploadFile, File
+import shutil
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import datetime
 
@@ -58,8 +60,20 @@ def get_base_path():
     else:
         # rodando normalmente como script
         return os.path.dirname(os.path.abspath(__file__))
+    
+def get_dist_path():
+    if getattr(sys, 'frozen', False):
+        meipass = sys._MEIPASS
+        dist = os.path.join(meipass, "dist")
+        print(f"DEBUG: _MEIPASS = {meipass}")
+        print(f"DEBUG: DIST_PATH = {dist}")
+        print(f"DEBUG: dist exists = {os.path.exists(dist)}")
+        return dist
+    else:
+        return os.path.join(os.path.dirname(os.path.abspath(__file__)), "dist")
 
 BASE_PATH = get_base_path()
+DIST_PATH = get_dist_path()
 DOCS_PATH = os.path.join(BASE_PATH, "documentos")
 VENV_PATH = os.path.join(BASE_PATH, "vetores_db")
 ENV_PATH = os.path.join(BASE_PATH, ".env")
@@ -271,6 +285,15 @@ def login(user: UserCreate):
     
     return {"token": token}
 
+@app.post("/upload")
+async def upload_file(file: UploadFile = File(...)):
+    end = os.path.join(DOCS_PATH, file.filename)
+    
+    with open(end, "wb") as f:
+        shutil.copyfileobj(file.file, f)
+    
+    print(f"Arquivo recebido: {file.filename}")
+    return {"message": f"Arquivo {file.filename} enviado com sucesso!"}
 # Endpoint para receber perguntas, consultar o ChromaDB e retornar respostas geradas pelo modelo
 @app.post("/ask")
 async def answer(request_data: Ask):
@@ -377,17 +400,22 @@ async def answer(request_data: Ask):
 
     id_resposta = str(uuid.uuid4())
 
-    def generate():
+    async def generate():
         print(f"id_resposta:{id_resposta}")
         yield json.dumps({"type": "id", "id": id_resposta}) + "\n"
-        stream = ollama.chat(
-            model='deepseek-r1:8b',
-            messages=[
-                {'role': 'system', 'content': prompt_sistema},
-                {'role': 'user', 'content': request_data.texto}
-            ],
-            stream=True,
-            keep_alive=-1
+        
+        loop = asyncio.get_event_loop()
+        stream = await loop.run_in_executor(
+            None,  # usa thread pool padrão
+            lambda: ollama.chat(
+                model='deepseek-r1:8b',
+                messages=[
+                    {'role': 'system', 'content': prompt_sistema},
+                    {'role': 'user', 'content': request_data.texto}
+                ],
+                stream=True,
+                keep_alive=-1
+            )
         )
 
         for chunk in stream:
@@ -400,12 +428,20 @@ async def answer(request_data: Ask):
                 "winner": winnerFonts,
                 "percent": percents
             }) + "\n"
+            await asyncio.sleep(0)
 
-    return StreamingResponse(generate(), media_type="application/x-ndjson")
+    return StreamingResponse(
+    generate(),
+    media_type="application/x-ndjson",
+    headers={
+        "X-Accel-Buffering": "no",
+        "Cache-Control": "no-cache",
+        "Transfer-Encoding": "chunked"
+    }
+)
 
 
 # Servir frontend React se a pasta dist existir
-DIST_PATH = os.path.join(BASE_PATH, "dist")
 if os.path.exists(DIST_PATH):
     app.mount("/assets", StaticFiles(directory=os.path.join(DIST_PATH, "assets")), name="assets")
 
@@ -413,6 +449,10 @@ if os.path.exists(DIST_PATH):
     async def serve_frontend(full_path: str):
         index = os.path.join(DIST_PATH, "index.html")
         return FileResponse(index)
+    
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
 
 # Comando para rodar o servidor | python -m uvicorn engine:app --host 0.0.0.0 --port 8000 --reload
 #  Comando para buildar o executável:
@@ -427,5 +467,20 @@ python -m PyInstaller --onefile --name ditoo-server \
   --collect-all ollama \
   --collect-all fastapi \
   --collect-all uvicorn \
+  --collect-all passlib \
+  --collect-all jose \
+  --collect-all openpyxl \
+  --collect-all dotenv \
+  --collect-all fitz \
+  --collect-all asyncio \
+  --collect-all sqlalchemy \
+  --collect-all python-multipart \
+  --hidden-import uvicorn.logging \
+  --hidden-import uvicorn.loops \
+  --hidden-import uvicorn.loops.auto \
+  --hidden-import uvicorn.protocols \
+  --hidden-import uvicorn.protocols.http.auto \
+  --hidden-import uvicorn.lifespan \
+  --hidden-import uvicorn.lifespan.on \
   engine.py
 """
