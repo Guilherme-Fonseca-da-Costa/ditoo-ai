@@ -243,7 +243,14 @@ def percent_files(percentage):
 
 class UserCreate(BaseModel):
     username: str
+    email: str
     password: str
+    role: str
+
+class UserLogin(BaseModel):
+    email: str
+    password: str
+
 
 class Model(BaseModel):
     model: str
@@ -254,13 +261,15 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 security = HTTPBearer()
 
 def current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    
     token = credentials.credentials
+    print(f"CURRENT: {token}")
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
-        user_id = payload.get("user_id")
-        if user_id is None:
+        username = payload.get("sub")
+        if username is None:
             raise HTTPException(status_code=401, detail="Invalid token")
-        return user_id
+        return username
     except JWTError:
         raise HTTPException(status_code=401, detail="Invalid token")
     
@@ -279,29 +288,34 @@ def register(user: UserCreate):
     
     novo_user = User(
         username=user.username,
-        password=pwd_context.hash(user.password)
+        email=user.email,
+        password=pwd_context.hash(user.password),
+        role=user.role
     )
     db.add(novo_user)
     db.commit()
     return {"message": "Usuário criado!"}
 
 @app.post("/loginUser")
-def login(user: UserCreate):
+async def login(user: UserLogin):
+    print(f"Usuário: {user}")
     db = SessionLocal()
-    db_user = db.query(User).filter_by(username=user.username).first()
+    db_user = db.query(User).filter_by(email=user.email).first()
     
     if not db_user or not pwd_context.verify(user.password, db_user.password):
         raise HTTPException(status_code=401, detail="Credenciais inválidas")
     
     token = jwt.encode({
-        "sub": user.username,
-        "exp": datetime.datetime.utcnow() + datetime.timedelta(hours=8)
+        "user": db_user.username,
+        "sub": db_user.email,
+        "exp": datetime.datetime.utcnow() + datetime.timedelta(hours=8),
+        "role": db_user.role
     }, SECRET_KEY, algorithm="HS256")
     
     return {"token": token}
 
 @app.post("/upload")
-async def upload_file(file: UploadFile = File(...)):
+async def upload_file(file: UploadFile = File(...), user=Depends(current_user)):
     end = os.path.join(DOCS_PATH, file.filename)
     
     with open(end, "wb") as f:
@@ -311,7 +325,7 @@ async def upload_file(file: UploadFile = File(...)):
     return {"message": f"Arquivo {file.filename} enviado com sucesso!"}
 # Endpoint para receber perguntas, consultar o ChromaDB e retornar respostas geradas pelo modelo
 @app.post("/ask")
-async def answer(request_data: Ask):
+async def answer(request_data: Ask, user=Depends(current_user)):
     percentResult = 0
     max_fonts = 3
     context_parts = []
