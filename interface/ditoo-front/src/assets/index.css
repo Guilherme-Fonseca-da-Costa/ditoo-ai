@@ -960,6 +960,7 @@ body {
   width: 100%;
   background: var(--surface2);
   border: 0.5px solid var(--border);
+  padding: 10px;
   border-radius: var(--radius-md);
   color: var(--text);
   font-family: 'DM Sans', sans-serif;
@@ -1012,6 +1013,38 @@ body {
   border-top: 0.5px solid var(--border);
 }
 
+.alert{
+  position: absolute;
+  left: 30px;
+  bottom: 30px;
+  display: flex;
+  color: white;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 10px;
+  background-color: #d8084d;
+  border-radius: 15px;
+  border: 1.5px solid var(--border);;
+  animation: alert 3.3s ease;
+}
+
+@keyframes alert {
+  0% {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  50% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(0);
+  }
+}
+
+
 /* ─── Página do erro 404 ─────────────────────────────────── */
 .not-found-page {
   display: flex;
@@ -1022,6 +1055,8 @@ body {
   gap: 8px;
   animation: fadeIn 0.3s ease;
 }
+
+
 
 .not-found-code {
   font-size: 9rem;
