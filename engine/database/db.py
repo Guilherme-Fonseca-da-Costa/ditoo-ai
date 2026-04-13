@@ -1,7 +1,7 @@
 import os
 
 from pydantic import BaseModel
-from sqlalchemy import create_engine, Column, String, Integer
+from sqlalchemy import create_engine, Column, String, Integer, ForeignKey
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 
@@ -20,16 +20,17 @@ Base = declarative_base()
 class User(Base):
     __tablename__ = 'users'
     id = Column(Integer, primary_key=True, index=True)
-    name = Column(String, index=True)
+    username = Column(String, index=True)
     email = Column(String, unique=True, index=True)
     password = Column(String)
+    role = Column(String)
 
-Base.metadata.create_all(bind=engine)
+
 # Configurações específicas do usuário
 class ConfigUser(Base):
     __tablename__ = 'config_users'
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, foreign_key='users.id')
+    user_id = Column(Integer, ForeignKey('users.id'))
     config_key = Column(String)
     config_value = Column(String)
 # Configurações administrativas para o sistema
@@ -42,14 +43,16 @@ class ConfigAdmin(Base):
     folders = Column(String)
     confidentialFolders = Column(String)
 
+Base.metadata.create_all(bind=engine)
 # Insert de teste no SQLITE
 """
 db = SessionLocal()
-new_user = User(name="John Doe", email="john@example.com", password="password123")
+new_user = User(username="John Doe", email="john@example.com", password="password123")
 db.add(new_user)
 db.commit()
 db.refresh(new_user)
-print(f"User created: {new_user.name} with email {new_user.email}") 
+print(f"User created: {new_user.username} with email {new_user.email}") 
+
 """
 
 # Consulta de teste no SQLITE
