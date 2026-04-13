@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState, type DragEvent } from "react";
+import { useNavigate } from "react-router";
 import DitooLogo from "../components/DitooLogo";
-import ReactMarkdown from 'react-markdown'
+import ReactMarkdown from "react-markdown";
+
 import {
   useTheme,
   ACCENT_COLORS,
@@ -31,7 +33,7 @@ interface HistoryItem {
 }
 
 // ─── Constantes ────────────────────────────────────────────────────────────────
-
+const TOKEN_KEY = import.meta.env.VITE_TOKEN_KEY ?? "ditoo_token";
 // sugestões de prompts
 const SUGGESTED_PROMPTS = [
   "Qual é a política de férias da empresa?",
@@ -465,7 +467,7 @@ function AppearancePanel({ onClose }: { onClose: () => void }) {
 function UploadPanel({ onClose }: { onClose: () => void }) {
   const [files, setFiles] = useState<File[]>([]);
   const [over, setOver] = useState(false);
-  console.log(over)
+  console.log(over);
   const inputRef = useRef<HTMLInputElement>(null);
   const prevent = (e: DragEvent) => {
     e.preventDefault();
@@ -554,7 +556,16 @@ function UploadPanel({ onClose }: { onClose: () => void }) {
           ))}
         </div>
       </div>
-      <button className="send-btn noText-btn" style={{}} onClick={() => {handleSendFiles(files); onClose()} }>Enviar</button>
+      <button
+        className="send-btn noText-btn"
+        style={{}}
+        onClick={() => {
+          handleSendFiles(files);
+          onClose();
+        }}
+      >
+        Enviar
+      </button>
     </div>
   );
 }
@@ -673,6 +684,7 @@ export default function Chat() {
   const [showConfig, setShowConfig] = useState(false);
   const [activeSources, setActiveSources] = useState<Source[]>([]);
   const [selectedModel, setSelectedModel] = useState("deepseek-r1:8b");
+  const username = localStorage.getItem("username")
 
   // histórico de conversas
   const [history, setHistory] = useState<HistoryItem[]>([]);
@@ -685,6 +697,10 @@ export default function Chat() {
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  useEffect(() => {
+    if (!api.getToken()) navigate("/login")
+  })
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -727,10 +743,14 @@ export default function Chat() {
     try {
       const response = await fetch("/ask", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${localStorage.getItem(TOKEN_KEY)}`,
+        },
         body: JSON.stringify({ texto: text }),
       });
-
+      console.log(response.headers);
+      console.log("Response status:", response.status);
       if (!response.body) throw new Error("Sem corpo na resposta");
 
       const newAiId = Date.now() + 1;
@@ -853,7 +873,10 @@ export default function Chat() {
 
       fetch("/ask", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${localStorage.getItem(TOKEN_KEY)}`,
+        },
         body: JSON.stringify({ texto: text }),
       })
         .then(async (response) => {
@@ -941,6 +964,13 @@ export default function Chat() {
     });
   }
 
+  const navigate = useNavigate();
+
+  function handleLogout() {
+    localStorage.removeItem(TOKEN_KEY)
+    navigate("/login")
+  }
+
   const isAnyMobileMenuOpen = isMobileViewport && (sidebarOpen || rightOpen);
 
   // ─── Render ────────────────────────────────────────────────────────────────
@@ -973,7 +1003,7 @@ export default function Chat() {
           >
             <div className="avatar">F</div>
             <span className="greeting">
-              olá, <b>Fulana!</b>
+              olá, <b>{username}!</b>
             </span>
             <Icon.ChevronDown />
 
@@ -1002,7 +1032,7 @@ export default function Chat() {
                   <Icon.Settings /> Configurações
                 </div>
                 <hr className="dropdown-sep" />
-                <div className="dropdown-item danger">
+                <div onClick={handleLogout} className="dropdown-item danger">
                   <Icon.Logout /> Sair
                 </div>
               </div>
@@ -1106,7 +1136,7 @@ export default function Chat() {
               <div className="empty-state">
                 <div style={{ textAlign: "center" }}>
                   <DitooLogo size={44} />
-                  <div className="empty-title">Como posso ajudar, Fulana?</div>
+                  <div className="empty-title">Como posso ajudar, {username}?</div>
                 </div>
                 <div className="prompts-grid">
                   {SUGGESTED_PROMPTS.map((p) => (
