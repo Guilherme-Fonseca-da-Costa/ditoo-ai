@@ -1,10 +1,23 @@
-import { useState } from "react";
+import React, { useState } from "react";
 import "../assets/configPage.css";
+import { api } from "../services/api";
 
 export default function Config() {
   const [selectedConfig, setSelectedConfig] = useState("user");
   const [isAdmin] = useState(true); // Simulação de permissão de admin, vou substituir por lógica real
   const [model, setModel] = useState("deepseek-r1:8b");
+  const [userName, setUserName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setconfirmPassword] = useState("");
+  const [role, setRole] = useState("user")
+
+  function createUser(e: React.FormEvent) {
+    e.preventDefault();
+    if (password === confirmPassword) {
+      api.register(userName, email, password, role);
+    }
+  }
   return (
     <div id="configPage">
       <div id="configSideBar">
@@ -31,13 +44,26 @@ export default function Config() {
           <div id="systemConfig">
             <h1>Configurações de Sistema</h1>
             <div>
-                
-                <label htmlFor="requestParalel">
-                    <h3>Paralelismo de Requisições</h3>
-                    <input type="number" id="requestParalel" name="requestParalel" min={1} max={10} defaultValue={3} />
-                </label>
-                <p>Defina o número máximo de requisições que podem ser processadas simultaneamente pelo Ditoo.</p>
-                <p>Atenção: Este campo impacta diretamente a performance do sistema. Quanto maior o valor, maior será a carga no hardware que hospeda o serviço.</p>
+              <label htmlFor="requestParalel">
+                <h3>Paralelismo de Requisições</h3>
+                <input
+                  type="number"
+                  id="requestParalel"
+                  name="requestParalel"
+                  min={1}
+                  max={10}
+                  defaultValue={3}
+                />
+              </label>
+              <p>
+                Defina o número máximo de requisições que podem ser processadas
+                simultaneamente pelo Ditoo.
+              </p>
+              <p>
+                Atenção: Este campo impacta diretamente a performance do
+                sistema. Quanto maior o valor, maior será a carga no hardware
+                que hospeda o serviço.
+              </p>
             </div>
             <h3>Seletor de LLM</h3>
             <select
@@ -86,20 +112,38 @@ export default function Config() {
               <input
                 className="userCreatorInput"
                 placeholder="Nome do usuário"
+                value={userName}
+                onChange={(e) => setUserName(e.target.value)}
+                required
               />
               <input
                 className="userCreatorInput"
                 placeholder="Email do usuário"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
               />
               <input
                 className="userCreatorInput"
                 placeholder="Senha do usuário"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+              />
+              <input
+                className="userCreatorInput"
+                placeholder="Confirme a senha do usuário"
+                value={confirmPassword}
+                onChange={(e) => setconfirmPassword(e.target.value)}
+                required
               />
               <select name="userType" id="userTypeSelector">
-                <option value="user">Usuário Comum</option>
-                <option value="admin">Administrador</option>
+                <option onSelect={() => (setRole("user"))} value="user">Usuário Comum</option>
+                <option onSelect={() => (setRole("admin"))} value="admin">Administrador</option>
               </select>
-              <button id="createUserButton">Criar usuário</button>
+              <button onClick={createUser} id="createUserButton">
+                Criar usuário
+              </button>
             </form>
           </div>
         )}
