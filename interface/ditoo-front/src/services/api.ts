@@ -1,37 +1,59 @@
+import { jwtDecode } from "jwt-decode";
 // Esse arquivo é responsável por lidar com as chamadas à API do backend. Ele exporta um objeto `api` que contém métodos para interagir com os endpoints do backend, como o método `login` para autenticação.
-const TOKEN_KEY = "ditoo_token";
+const TOKEN_KEY = import.meta.env.VITE_TOKEN_KEY ?? "ditoo_token";
 
 export const api = {
-  login: async (user: string, pass: string) => {
+  login: async (email: string, pass: string) => {
     const res = await fetch("/loginUser", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username: user, password: pass }),
+      body: JSON.stringify({
+        email: email,
+        password: pass,
+      }),
     });
-    console.log(res.json());
     const data = await res.json();
+    console.log(data);
     if (data.token) {
       localStorage.setItem(TOKEN_KEY, data.token);
     }
-    return data;
+    if (res.status === 401) return { error: "Usuário ou senha incorretos" };
+    return console.log(data);
+  },
+  register: async (username: string, email: string, pass: string, role: string) => {
+    const res = await fetch("/register", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${localStorage.getItem(TOKEN_KEY)}`,
+      },
+      body: JSON.stringify({
+        username: username,
+        email: email,
+        password: pass,
+        role: role
+      }),
+    });
+    return console.log(res);
   },
   getToken: () => {
-    localStorage.getItem(TOKEN_KEY);
+    const token = localStorage.getItem(TOKEN_KEY);
+    if (!token) return null;
+    const payload = jwtDecode<{ sub: string }>(token);
+    localStorage.setItem("username", payload.sub);
+    return token;
   },
   isLoggedIn: () => {
     !!localStorage.getItem(TOKEN_KEY);
   },
-  getUsers: async () => {
-    const res = await fetch("/users", {
-      method: "GET",
-      headers: { "Content-Type": "application/json" },
-    });
-    return res.json();
-  },
   upload: async (file: File) => {
     const formData = new FormData();
     formData.append("file", file);
-    await fetch("/upload", { method: "POST", body: formData });
+    await fetch("/upload", {
+      method: "POST",
+      body: formData,
+      headers: { Authorization: `Bearer ${localStorage.getItem(TOKEN_KEY)}` },
+    });
   },
   changeModel: async (model: string) => {
     console.log(model);
