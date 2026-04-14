@@ -570,50 +570,6 @@ function UploadPanel({ onClose }: { onClose: () => void }) {
   );
 }
 
-// painel de modelos
-
-function ModelPanel({
-  onClose,
-  selected,
-  onSelect,
-}: {
-  onClose: () => void;
-  selected: string;
-  onSelect: (model: string) => void;
-}) {
-  const models = ["deepseek-r1:8b", "qwen2.5:7b", "llama3.1:8b"];
-
-  return (
-    <div className="model-panel" onClick={(e) => e.stopPropagation()}>
-      <div className="appear-row column">
-        <span>Modelos</span>
-        <div
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            gap: 6,
-            marginTop: 4,
-          }}
-        >
-          {models.map((m) => (
-            <div
-              key={m}
-              className={`history-item ${selected === m ? "active" : ""}`}
-              onClick={() => {
-                api.changeModel(m);
-                onSelect(m);
-                onClose();
-              }}
-            >
-              <Icon.ModelSwitch /> {m}
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
-
 // histórico de conversas, agrupado por tópico/pergunta
 function HistoryEntry({
   item,
@@ -690,6 +646,7 @@ export default function Chat() {
   const [showConfig, setShowConfig] = useState(false);
   const [activeSources, setActiveSources] = useState<Source[]>([]);
   const [selectedModel, setSelectedModel] = useState("deepseek-r1:8b");
+  const messageRefs = useRef<Record<number, HTMLDivElement | null>>({});
   const username = localStorage.getItem("username")
 
   // histórico de conversas
@@ -1237,13 +1194,7 @@ export default function Chat() {
               {showUpload && (
                 <UploadPanel onClose={() => setShowUpload(false)} />
               )}
-              {showModel && (
-                <ModelPanel
-                  selected={selectedModel}
-                  onSelect={(m) => setSelectedModel(m)}
-                  onClose={() => setShowModel(false)}
-                />
-              )}
+             
               <div className="input-wrap">
                 <textarea
                   ref={inputRef}
@@ -1268,25 +1219,6 @@ export default function Chat() {
                 >
                   <Icon.Upload /> <span>Upload</span>
                 </button>
-                <div style={{ position: "relative" }}>
-                  {showModel && (
-                    <ModelPanel
-                      selected={selectedModel}
-                      onSelect={(m) => setSelectedModel(m)}
-                      onClose={() => setShowModel(false)}
-                    />
-                  )}
-                  <button
-                    className="send-btn noText-btn"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setShowModel((v) => !v);
-                    }}
-                    disabled={loading}
-                  >
-                  <Icon.ModelSwitch /> <span>{selectedModel}</span>
-                  </button>     
-                </div>
                 <button
                   className="send-btn noText-btn"
                   onClick={handleSend}
