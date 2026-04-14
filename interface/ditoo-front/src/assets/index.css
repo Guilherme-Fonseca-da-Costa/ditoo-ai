@@ -608,7 +608,6 @@ body {
 .msg-wrap {
   display: flex;
   flex-direction: column;
-  margin-bottom: 12px;
   animation: msgIn 0.2s ease;
 }
 
@@ -1054,20 +1053,8 @@ body {
   gap: 8px;
   animation: fadeIn 0.3s ease;
 }
-
-.not-found-code {
-  font-size: 9rem;
-  font-weight: 300;
-  color: var(--border);
-  line-height: 1;
-}
-
-.not-found-text {
-  font-size: 1.2rem;
-  color: var(--muted);
-  font-weight: 400;
-}
-
+.not-found-code { font-size: 9rem; font-weight: 300; color: var(--border); line-height: 1; }
+.not-found-text { font-size: 1.2rem; color: var(--muted); font-weight: 400; }
 .not-found-btn {
   margin-top: 12px;
   background: var(--accent);
