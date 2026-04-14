@@ -1,34 +1,758 @@
-#configPage{
-    display: flex;
-    gap: 20px;
-}
+/* configPage.css — Estilos da página de Configurações do Ditoo
+   Utiliza as variáveis CSS definidas em index.css:
+   --bg, --surface, --surface2, --surface3, --border,
+   --text, --muted, --accent, --accent-soft,
+   --radius-sm, --radius-md, --radius-lg, --transition            */
 
-#configSideBar{
-    width: 100%;
-    background-color: rgba(255, 255, 255, 0);
-    border-top-left-radius: 15px;
-    border-top-right-radius: 15px;
-}
+/* ─── Overlay escurecido que cobre o chat ─────────────────────────────────── */
+/* Sobrescreve o estilo mínimo que já existe no Chat.tsx                       */
 
 .config-overlay {
   position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background: rgba(0, 0, 0, 0.5);
-  
+  inset: 0;
+  background: rgba(0, 0, 0, 0.48);
+  backdrop-filter: blur(2px);
   display: flex;
   align-items: center;
   justify-content: center;
-
   z-index: 9999;
+  animation: fadeIn 0.15s ease;
 }
 
+/* ─── Janela flutuante (estilo Notion) ─────────────────────────────────────── */
+
 .config-modal {
+  background: var(--surface);
+  border: 0.5px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.45);
+  width: min(820px, 94vw);
+  height: min(560px, 90vh);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 0;                /* sem padding: o shell interno cuida do layout  */
+  animation: modalIn 0.18s ease;
+}
+
+@keyframes modalIn {
+  from { opacity: 0; transform: scale(0.97) translateY(6px); }
+  to   { opacity: 1; transform: scale(1)    translateY(0);   }
+}
+
+/* ─── Shell: layout em duas colunas (nav | body) ──────────────────────────── */
+
+.cfg-shell {
+  display: flex;
+  height: 100%;      /* agora o pai (.config-modal) tem altura definida */
+  overflow: hidden;
+}
+
+/* ─── Barra lateral de navegação ──────────────────────────────────────────── */
+
+.cfg-nav {
+  width: 180px;
+  flex-shrink: 0;
+  border-right: 0.5px solid var(--border);
+  padding: 16px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: var(--surface);
+}
+
+/* Botão de aba na nav */
+.cfg-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: 13px;
+  font-family: 'DM Sans', sans-serif;
+  color: var(--muted);
+  width: 100%;
+  text-align: left;
+  transition: background var(--transition), color var(--transition);
+  position: relative;
+}
+
+.cfg-nav-item:hover {
+  background: var(--surface2);
+  color: var(--text);
+}
+
+.cfg-nav-item.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.cfg-nav-item.disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Ícone de cadeado para abas admin */
+.cfg-nav-lock {
+  margin-left: auto;
+  opacity: 0.45;
+  display: flex;
+  align-items: center;
+}
+
+/* ─── Área de conteúdo scrollável ─────────────────────────────────────────── */
+
+.cfg-body {
+  flex: 1;
+  overflow-y: auto;
   background: var(--bg);
-  border-radius: 12px;
-  padding: 20px;
-  width: 600px;
-  max-width: 90%;
+  padding: 0;
+}
+
+/* Container interno do conteúdo com padding e gap entre seções */
+.cfg-content {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 20px 24px 32px;
+  max-width: 640px;
+}
+
+/* ─── Cabeçalho de seção ──────────────────────────────────────────────────── */
+
+.cfg-section-header {
+  margin-top: 14px;
+  margin-bottom: 2px;
+}
+
+.cfg-section-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.cfg-section-desc {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 2px;
+  line-height: 1.5;
+}
+
+/* ─── Card: agrupa linhas de configuração ─────────────────────────────────── */
+
+.cfg-card {
+  background: var(--surface);
+  border: 0.5px solid var(--border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+/* ─── Linha de configuração ───────────────────────────────────────────────── */
+
+.cfg-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 12px 16px;
+}
+
+.cfg-row-label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+}
+
+.cfg-row-name {
+  font-size: 13px;
+  color: var(--text);
+}
+
+.cfg-row-hint {
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+.cfg-warning {
+  font-size: 11px;
+  color: var(--accent);
+  line-height: 1.4;
+}
+
+.cfg-row-control {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+/* Ação (botão) ao final de um card */
+.cfg-row-action {
+  padding: 12px 16px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* ─── Separador dentro de card ────────────────────────────────────────────── */
+
+.cfg-divider {
+  border: none;
+  border-top: 0.5px solid var(--border);
+  margin: 0;
+}
+
+/* ─── Campos de texto / input ─────────────────────────────────────────────── */
+
+.cfg-input {
+  background: var(--surface2);
+  border: 0.5px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-family: 'DM Sans', sans-serif;
+  font-size: 13px;
+  padding: 6px 10px;
+  outline: none;
+  transition: border-color var(--transition);
+  width: 100%;
+}
+
+.cfg-input:focus {
+  border-color: var(--accent);
+}
+
+.cfg-input::placeholder {
+  color: var(--muted);
+}
+
+/* Select com a mesma aparência do input */
+.cfg-select {
+  background: var(--surface2);
+  border: 0.5px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-family: 'DM Sans', sans-serif;
+  font-size: 13px;
+  padding: 6px 10px;
+  outline: none;
+  cursor: pointer;
+  transition: border-color var(--transition);
+  width: 100%;
+}
+
+.cfg-select:focus {
+  border-color: var(--accent);
+}
+
+/* ─── Botões ──────────────────────────────────────────────────────────────── */
+
+/* Botão primário (fundo accent) */
+.cfg-btn-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 7px 14px;
+  font-size: 12px;
+  font-family: 'DM Sans', sans-serif;
+  font-weight: 500;
+  cursor: pointer;
+  transition: opacity var(--transition);
+}
+
+.cfg-btn-primary:hover {
+  opacity: 0.88;
+}
+
+/* Botão fantasma (sem fundo) */
+.cfg-btn-ghost {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  color: var(--muted);
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 6px 10px;
+  font-size: 12px;
+  font-family: 'DM Sans', sans-serif;
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition);
+}
+
+.cfg-btn-ghost:hover {
+  background: var(--surface2);
+  color: var(--text);
+}
+
+/* Botão com borda */
+.cfg-btn-outline {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: none;
+  color: var(--muted);
+  border: 0.5px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 7px 14px;
+  font-size: 12px;
+  font-family: 'DM Sans', sans-serif;
+  cursor: pointer;
+  transition: border-color var(--transition), color var(--transition), background var(--transition);
+}
+
+.cfg-btn-outline:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+/* Botão ícone pequeno (editar, excluir) */
+.cfg-icon-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--muted);
+  padding: 5px;
+  border-radius: var(--radius-sm);
+  transition: background var(--transition), color var(--transition);
+}
+
+.cfg-icon-btn:hover {
+  background: var(--surface2);
+  color: var(--text);
+}
+
+.cfg-icon-btn.danger:hover {
+  background: #e24b4a18;
+  color: #e24b4a;
+}
+
+/* ─── Row com input + botão lado a lado ───────────────────────────────────── */
+
+.cfg-input-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Texto de valor atual (modo leitura) */
+.cfg-value-text {
+  font-size: 13px;
+  color: var(--text);
+}
+
+/* Badge "Salvo!" que aparece após salvar */
+.cfg-saved-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--accent);
+  animation: fadeIn 0.15s ease;
+}
+
+/* ─── Toggle de tema (Claro | Escuro) ─────────────────────────────────────── */
+
+.cfg-theme-toggle {
+  display: flex;
+  background: var(--surface2);
+  border: 0.5px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.cfg-theme-opt {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-family: 'DM Sans', sans-serif;
+  color: var(--muted);
+  background: none;
+  border: none;
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition);
+}
+
+.cfg-theme-opt.active {
+  background: var(--accent);
+  color: #fff;
+}
+
+/* ─── Seletor de cor de destaque ──────────────────────────────────────────── */
+
+.cfg-accents {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+/* Reutiliza a lógica de .accent-dot do index.css com pequenas adições */
+.cfg-accent-dot {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  cursor: pointer;
+  border: 2px solid transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  transition: transform var(--transition), border-color var(--transition);
+}
+
+.cfg-accent-dot:hover {
+  transform: scale(1.15);
+}
+
+.cfg-accent-dot.active {
+  border-color: var(--text);
+  transform: scale(1.15);
+}
+
+/* ─── Seletor de modelo (lista com radio) ─────────────────────────────────── */
+
+.cfg-model-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.cfg-model-option {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 16px;
+  cursor: pointer;
+  transition: background var(--transition);
+  border-bottom: 0.5px solid var(--border);
+}
+
+.cfg-model-option:last-child {
+  border-bottom: none;
+}
+
+.cfg-model-option:hover {
+  background: var(--surface2);
+}
+
+.cfg-model-option.active {
+  background: var(--accent-soft);
+}
+
+/* Círculo radio */
+.cfg-model-radio {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 1.5px solid var(--border);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: border-color var(--transition);
+}
+
+.cfg-model-option.active .cfg-model-radio {
+  border-color: var(--accent);
+}
+
+.cfg-model-radio-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.cfg-model-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+}
+
+.cfg-model-name {
+  font-size: 13px;
+  color: var(--text);
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.cfg-model-tag {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--accent);
+  background: var(--accent-soft);
+  padding: 2px 7px;
+  border-radius: 99px;
+  letter-spacing: 0.03em;
+}
+
+/* ─── Controle numérico (−  N  +) ─────────────────────────────────────────── */
+
+.cfg-number-control {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  background: var(--surface2);
+  border: 0.5px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.cfg-number-btn {
+  background: none;
+  border: none;
+  padding: 6px 12px;
+  font-size: 15px;
+  font-weight: 400;
+  color: var(--muted);
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition);
+  line-height: 1;
+}
+
+.cfg-number-btn:hover:not(:disabled) {
+  background: var(--surface3);
+  color: var(--text);
+}
+
+.cfg-number-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.cfg-number-value {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 13px;
+  color: var(--text);
+  min-width: 28px;
+  text-align: center;
+}
+
+/* ─── Lista de pastas ─────────────────────────────────────────────────────── */
+
+.cfg-folder-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.cfg-folder-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  border-bottom: 0.5px solid var(--border);
+  transition: background var(--transition);
+}
+
+.cfg-folder-item:last-child {
+  border-bottom: none;
+}
+
+.cfg-folder-item:hover {
+  background: var(--surface2);
+}
+
+.cfg-folder-icon {
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.cfg-folder-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.cfg-folder-name {
+  font-size: 13px;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cfg-folder-path {
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Badge de tipo de pasta */
+.cfg-folder-badge {
+  font-size: 10px;
+  font-weight: 500;
+  padding: 2px 8px;
+  border-radius: 99px;
+  flex-shrink: 0;
+  background: var(--surface2);
+  color: var(--muted);
+  border: 0.5px solid var(--border);
+}
+
+.cfg-folder-badge.secret {
+  background: #e24b4a18;
+  color: #e24b4a;
+  border-color: #e24b4a40;
+}
+
+.cfg-folder-actions {
+  display: flex;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+/* ─── Lista de usuários ───────────────────────────────────────────────────── */
+
+.cfg-user-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.cfg-user-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  border-bottom: 0.5px solid var(--border);
+  transition: background var(--transition);
+}
+
+.cfg-user-item:last-child {
+  border-bottom: none;
+}
+
+.cfg-user-item:hover {
+  background: var(--surface2);
+}
+
+/* Avatar reutiliza a classe .avatar do index.css */
+.cfg-user-avatar {
+  font-size: 10px;
+}
+
+.cfg-user-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.cfg-user-name {
+  font-size: 13px;
+  color: var(--text);
+}
+
+.cfg-user-email {
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Badge de papel do usuário */
+.cfg-user-badge {
+  font-size: 10px;
+  font-weight: 500;
+  padding: 2px 8px;
+  border-radius: 99px;
+  flex-shrink: 0;
+  background: var(--surface2);
+  color: var(--muted);
+  border: 0.5px solid var(--border);
+}
+
+.cfg-user-badge.admin {
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
+.cfg-user-actions {
+  display: flex;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+/* ─── Grid de criação de usuário ──────────────────────────────────────────── */
+
+.cfg-create-user-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  padding: 0 16px;
+  margin-bottom: 4px;
+}
+
+/* ─── Mensagem de estado vazio ────────────────────────────────────────────── */
+
+.cfg-empty-msg {
+  padding: 16px;
+  font-size: 12px;
+  color: var(--muted);
+  text-align: center;
+}
+
+/* ─── Conteúdo do card quando tem botão de ação embaixo ───────────────────── */
+/* O card pode ter folder-list ou user-list seguido de um .cfg-divider e btn */
+.cfg-card > .cfg-btn-outline {
+  margin: 0 16px 14px;
+}
+
+/* ─── Responsivo mobile ───────────────────────────────────────────────────── */
+
+@media (max-width: 600px) {
+  .cfg-shell {
+    flex-direction: column;
+  }
+
+  .cfg-nav {
+    width: 100%;
+    flex-direction: row;
+    border-right: none;
+    border-bottom: 0.5px solid var(--border);
+    padding: 8px;
+    gap: 4px;
+    overflow-x: auto;
+  }
+
+  .cfg-nav-item {
+    flex-shrink: 0;
+  }
+
+  .cfg-content {
+    padding: 14px 12px 24px;
+  }
+
+  .cfg-row {
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .cfg-row-control {
+    width: 100%;
+  }
+
+  .cfg-create-user-grid {
+    grid-template-columns: 1fr;
+    padding: 0 12px;
+  }
 }
