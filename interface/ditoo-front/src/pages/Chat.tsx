@@ -645,7 +645,6 @@ export default function Chat() {
   const [showUpload, setShowUpload] = useState(false);
   const [showConfig, setShowConfig] = useState(false);
   const [activeSources, setActiveSources] = useState<Source[]>([]);
-  const [selectedModel, setSelectedModel] = useState("deepseek-r1:8b");
   const messageRefs = useRef<Record<number, HTMLDivElement | null>>({});
   const username = localStorage.getItem("username")
 
