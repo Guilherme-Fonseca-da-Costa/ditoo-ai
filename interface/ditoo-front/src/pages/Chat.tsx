@@ -619,10 +619,12 @@ function HistoryEntry({
   item,
   isActive,
   onClick,
+  onMessageClick,
 }: {
   item: HistoryItem;
   isActive: boolean;
   onClick: () => void;
+  onMessageClick: (id: number) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const userMessages = item.messages.filter((m) => m.sender === "user");
@@ -630,7 +632,7 @@ function HistoryEntry({
   return (
     <div className="history-group">
       <div
-        className={`history-item ${isActive ? "active" : ""}`}
+        className={`sidebar-item ${isActive ? "active" : ""}`}
         onClick={onClick}
       >
         {/* Botão de expandir — só aparece se houver mais de 1 pergunta */}
@@ -653,9 +655,13 @@ function HistoryEntry({
       {expanded && userMessages.length > 1 && (
         <div className="history-messages">
           {userMessages.map((m) => (
-            <div key={m.id} className="history-message-item">
-              {m.text.length > 40 ? m.text.slice(0, 40) + "…" : m.text}
-            </div>
+            <div
+              key={m.id}
+              className="history-message-item"
+              onClick={() => onMessageClick(m.id)}
+            >
+            {m.text.length > 40 ? m.text.slice(0, 40) + "…" : m.text}
+            </div>            
           ))}
         </div>
       )}
@@ -732,14 +738,23 @@ export default function Chat() {
 
     // envia para o histórico
     const newId = Date.now();
-    const newEntry: HistoryItem = {
-      id: newId,
-      label: text.slice(0, 30) + (text.length > 30 ? "…" : ""),
-      messages: updatedMessages,
-    };
-    setHistory((prev) => [newEntry, ...prev]);
-    setActiveHistoryId(newId);
-
+    if (activeHistoryId == null) {
+      const newEntry: HistoryItem = {
+        id: newId,
+        label: text.slice(0, 30) + (text.length > 30 ? "…" : ""),
+        messages: updatedMessages,
+      };
+      setHistory((prev) => [newEntry, ...prev]);
+      setActiveHistoryId(newId);
+    } else {
+      setHistory((prev) =>
+        prev.map((h) =>
+          h.id === activeHistoryId
+            ? { ...h, messages: updatedMessages }
+            : h
+        )
+      );
+    }
     try {
       const response = await fetch("/ask", {
         method: "POST",
@@ -844,6 +859,15 @@ export default function Chat() {
     }
   }
 
+    // função para rolar a conversa até a mensagem citada no histórico
+  function scrollToMessage(id: number) {
+    const el = messageRefs.current[id];
+    if (!el) return;
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
+    el.classList.add("msg-highlight");
+    setTimeout(() => el.classList.remove("msg-highlight"), 1500);
+  }
+
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
@@ -863,13 +887,23 @@ export default function Chat() {
       setAiMsgId(null);
 
       const newId = Date.now();
-      const newEntry: HistoryItem = {
-        id: newId,
-        label: text.slice(0, 30) + (text.length > 30 ? "…" : ""),
-        messages: updatedMessages,
-      };
-      setHistory((prev) => [newEntry, ...prev]);
-      setActiveHistoryId(newId);
+      if (activeHistoryId == null) {
+        const newEntry: HistoryItem = {
+          id: newId,
+          label: text.slice(0, 30) + (text.length > 30 ? "…" : ""),
+          messages: updatedMessages,
+        };
+        setHistory((prev) => [newEntry, ...prev]);
+        setActiveHistoryId(newId);
+      } else {
+        setHistory((prev) =>
+          prev.map((h) =>
+            h.id === activeHistoryId
+              ? { ...h, messages: updatedMessages }
+              : h
+          )
+        );
+      }
 
       fetch("/ask", {
         method: "POST",
@@ -1095,7 +1129,11 @@ export default function Chat() {
                   key={item.id}
                   item={item}
                   isActive={activeHistoryId === item.id && messages.length > 0}
-                  onClick={() => setActiveHistoryId(item.id)}
+                  onClick={() => {
+                    setActiveHistoryId(item.id);
+                    setMessages(item.messages);
+                  }}
+                  onMessageClick={scrollToMessage}
                 />
               ))}
             </div>
@@ -1105,7 +1143,7 @@ export default function Chat() {
                 <AppearancePanel onClose={() => setShowAppear(false)} />
               )}
               <div
-                className="history-item"
+                className="sidebar-item"
                 onClick={(e) => {
                   e.stopPropagation();
                   setShowAppear((v) => !v);
@@ -1118,7 +1156,7 @@ export default function Chat() {
                   e.stopPropagation();
                   setShowConfig((v) => !v);
                 }}
-                className="history-item"
+                className="sidebar-item"
               >
                 <Icon.Settings /> Configurações
               </div>
@@ -1167,6 +1205,11 @@ export default function Chat() {
                       {msg.sender === "user" ? "Você" : "Ditoo"}
                     </div>
                     <div className={`bubble ${msg.sender}`}>
+                      <div
+                        key={msg.id}
+                        className={`msg-wrap ${msg.sender}`}
+                        ref={(el) => { messageRefs.current[msg.id] = el; }}
+                      >
                       <ReactMarkdown>{msg.text}</ReactMarkdown>
                       {msg.sender === "ai" &&
                         msg.sources &&
@@ -1179,6 +1222,7 @@ export default function Chat() {
                             {msg.sources.length > 1 ? "s" : ""}
                           </div>
                         )}
+                      </div>
                     </div>
                   </div>
                 ))
@@ -1213,7 +1257,7 @@ export default function Chat() {
                     e.target.style.height = e.target.scrollHeight + "px";
                   }}
                   onKeyDown={handleKeyDown}
-                />
+                  />     
                 <button
                   className="send-btn noText-btn"
                   onClick={(e) => {
@@ -1224,16 +1268,25 @@ export default function Chat() {
                 >
                   <Icon.Upload /> <span>Upload</span>
                 </button>
-                <button
-                  className="send-btn noText-btn"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setShowModel((v) => !v);
-                  }}
-                  disabled={loading}
-                >
+                <div style={{ position: "relative" }}>
+                  {showModel && (
+                    <ModelPanel
+                      selected={selectedModel}
+                      onSelect={(m) => setSelectedModel(m)}
+                      onClose={() => setShowModel(false)}
+                    />
+                  )}
+                  <button
+                    className="send-btn noText-btn"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setShowModel((v) => !v);
+                    }}
+                    disabled={loading}
+                  >
                   <Icon.ModelSwitch /> <span>{selectedModel}</span>
-                </button>
+                  </button>     
+                </div>
                 <button
                   className="send-btn noText-btn"
                   onClick={handleSend}

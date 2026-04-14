@@ -337,7 +337,7 @@ body {
   margin-bottom: 6px;
 }
 
-.history-item {
+.sidebar-item {
   padding: 7px 10px;
   border-radius: var(--radius-sm);
   cursor: pointer;
@@ -352,12 +352,12 @@ body {
   gap: 7px;
 }
 
-.history-item:hover {
+.sidebar-item:hover {
   background: var(--surface2);
   color: var(--text);
 }
 
-.history-item.active {
+.sidebar-item.active {
   background: var(--accent-soft);
   color: var(--accent);
 }
@@ -455,16 +455,14 @@ body {
 
 .model-panel {
   position: absolute;
-  bottom: calc(100% + 6px);
-  left: 0;
-  right: 0;
+  bottom: calc(100% + 10px);
+  left: -20px;
+  width: fit-content;
   background: var(--surface);
-  margin: 10px;
   border: 0.5px solid var(--border);
   border-radius: var(--radius-md);
   padding: 12px;
   box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.25);
-  animation: fadeIn 0.15s ease;
   z-index: 20;
 }
 
@@ -753,6 +751,7 @@ body {
   max-height: 10px;
   line-height: 1;
   min-height: 22px;
+  padding-left: 6px;
 }
 
 .chat-input::placeholder {
@@ -1056,8 +1055,6 @@ body {
   animation: fadeIn 0.3s ease;
 }
 
-
-
 .not-found-code {
   font-size: 9rem;
   font-weight: 300;
@@ -1141,6 +1138,7 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   border-left: 1.5px solid var(--border);
+  cursor: pointer;
 }
 
 /* ─── Mobile only: side menus over chat, compact spacing ───────────────────── */
@@ -1239,12 +1237,19 @@ body {
     margin-bottom: 4px;
   }
 
-  .history-item {
+  .sidebar-item {
     font-size: 12px;
     padding: 6px 8px;
     gap: 6px;
   }
 
+  .msg-highlight {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+  border-radius: var(--radius-md);
+  transition: outline 1.5s ease;
+  background: var(--accent);
+}
   .source-card {
     padding: 9px 10px;
   }
