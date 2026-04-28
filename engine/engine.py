@@ -176,7 +176,7 @@ def readXLSX(caminho):
     return text
 
 FileObserver = Observer()
-FileObserver.schedule(WatchFolder(), path=DOCS_PATH, recursive=False)
+FileObserver.schedule(WatchFolder(), path=DOCS_PATH, recursive=True)
 FileObserver.start()
 
 # FastAPI --- Servidor web para receber perguntas e retornar respostas
@@ -296,6 +296,20 @@ def register(user: UserCreate):
     db.commit()
     return {"message": "Usuário criado!"}
 
+@app.get("/getUsers")
+async def getUsers(user=Depends(current_user)):
+    db = SessionLocal()
+    db_users = db.query(User).all()
+    
+    return [
+        {
+            "id": u.id,
+            "username": u.username,
+            "email": u.email,
+            "role": u.role
+        }
+        for u in db_users
+    ]
 @app.post("/loginUser")
 async def login(user: UserLogin):
     print(f"Usuário: {user}")
@@ -432,7 +446,7 @@ async def answer(request_data: Ask, user=Depends(current_user)):
     async def generate():
         print(f"id_resposta:{id_resposta}")
         yield json.dumps({"type": "id", "id": id_resposta}) + "\n"
-        
+        w
         loop = asyncio.get_event_loop()
         stream = await loop.run_in_executor(
             None,  # usa thread pool padrão
