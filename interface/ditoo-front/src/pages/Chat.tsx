@@ -616,8 +616,8 @@ function HistoryEntry({
               className="history-message-item"
               onClick={() => onMessageClick(m.id)}
             >
-            {m.text.length > 40 ? m.text.slice(0, 40) + "…" : m.text}
-            </div>            
+              {m.text.length > 40 ? m.text.slice(0, 40) + "…" : m.text}
+            </div>
           ))}
         </div>
       )}
@@ -646,7 +646,7 @@ export default function Chat() {
   const [showConfig, setShowConfig] = useState(false);
   const [activeSources, setActiveSources] = useState<Source[]>([]);
   const messageRefs = useRef<Record<number, HTMLDivElement | null>>({});
-  const username = localStorage.getItem("username")
+  const username = localStorage.getItem("username");
 
   // histórico de conversas
   const [history, setHistory] = useState<HistoryItem[]>([]);
@@ -661,8 +661,8 @@ export default function Chat() {
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
-    if (!api.getToken()) navigate("/login")
-  })
+    if (!api.getToken()) navigate("/login");
+  });
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -705,10 +705,8 @@ export default function Chat() {
     } else {
       setHistory((prev) =>
         prev.map((h) =>
-          h.id === activeHistoryId
-            ? { ...h, messages: updatedMessages }
-            : h
-        )
+          h.id === activeHistoryId ? { ...h, messages: updatedMessages } : h,
+        ),
       );
     }
     try {
@@ -815,7 +813,7 @@ export default function Chat() {
     }
   }
 
-    // função para rolar a conversa até a mensagem citada no histórico
+  // função para rolar a conversa até a mensagem citada no histórico
   function scrollToMessage(id: number) {
     const el = messageRefs.current[id];
     if (!el) return;
@@ -854,10 +852,8 @@ export default function Chat() {
       } else {
         setHistory((prev) =>
           prev.map((h) =>
-            h.id === activeHistoryId
-              ? { ...h, messages: updatedMessages }
-              : h
-          )
+            h.id === activeHistoryId ? { ...h, messages: updatedMessages } : h,
+          ),
         );
       }
 
@@ -957,8 +953,8 @@ export default function Chat() {
   const navigate = useNavigate();
 
   function handleLogout() {
-    localStorage.removeItem(TOKEN_KEY)
-    navigate("/login")
+    localStorage.removeItem(TOKEN_KEY);
+    navigate("/login");
   }
 
   const isAnyMobileMenuOpen = isMobileViewport && (sidebarOpen || rightOpen);
@@ -991,7 +987,14 @@ export default function Chat() {
               setShowUserMenu((v) => !v);
             }}
           >
-            <div className="avatar">F</div>
+            <div className="avatar">
+              {(username ?? "")
+                .split(" ")
+                .slice(0, 2)
+                .map((n) => n[0])
+                .join("")
+                .toUpperCase()}
+            </div>
             <span className="greeting">
               olá, <b>{username}!</b>
             </span>
@@ -999,10 +1002,6 @@ export default function Chat() {
 
             {showUserMenu && (
               <div className="dropdown" onClick={(e) => e.stopPropagation()}>
-                <div className="dropdown-item">
-                  <Icon.User /> Perfil
-                </div>
-                <hr className="dropdown-sep" />
                 <div
                   className="dropdown-item"
                   onClick={() => {
@@ -1130,7 +1129,9 @@ export default function Chat() {
               <div className="empty-state">
                 <div style={{ textAlign: "center" }}>
                   <DitooLogo size={44} />
-                  <div className="empty-title">Como posso ajudar, {username}?</div>
+                  <div className="empty-title">
+                    Como posso ajudar, {username}?
+                  </div>
                 </div>
                 <div className="prompts-grid">
                   {SUGGESTED_PROMPTS.map((p) => (
@@ -1164,20 +1165,22 @@ export default function Chat() {
                       <div
                         key={msg.id}
                         className={`msg-wrap ${msg.sender}`}
-                        ref={(el) => { messageRefs.current[msg.id] = el; }}
+                        ref={(el) => {
+                          messageRefs.current[msg.id] = el;
+                        }}
                       >
-                      <ReactMarkdown>{msg.text}</ReactMarkdown>
-                      {msg.sender === "ai" &&
-                        msg.sources &&
-                        msg.sources.length > 0 && (
-                          <div
-                            className="source-tag"
-                            style={{ display: "block", marginTop: 8 }}
-                          >
-                            <Icon.FileSource /> {msg.sources.length} fonte
-                            {msg.sources.length > 1 ? "s" : ""}
-                          </div>
-                        )}
+                        <ReactMarkdown>{msg.text}</ReactMarkdown>
+                        {msg.sender === "ai" &&
+                          msg.sources &&
+                          msg.sources.length > 0 && (
+                            <div
+                              className="source-tag"
+                              style={{ display: "block", marginTop: 8 }}
+                            >
+                              <Icon.FileSource /> {msg.sources.length} fonte
+                              {msg.sources.length > 1 ? "s" : ""}
+                            </div>
+                          )}
                       </div>
                     </div>
                   </div>
@@ -1193,7 +1196,7 @@ export default function Chat() {
               {showUpload && (
                 <UploadPanel onClose={() => setShowUpload(false)} />
               )}
-             
+
               <div className="input-wrap">
                 <textarea
                   ref={inputRef}
@@ -1207,7 +1210,7 @@ export default function Chat() {
                     e.target.style.height = e.target.scrollHeight + "px";
                   }}
                   onKeyDown={handleKeyDown}
-                  />     
+                />
                 <button
                   className="send-btn noText-btn"
                   onClick={(e) => {
