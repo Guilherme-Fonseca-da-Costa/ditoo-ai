@@ -39,9 +39,18 @@ export const api = {
   getToken: () => {
     const token = localStorage.getItem(TOKEN_KEY);
     if (!token) return null;
-    const payload = jwtDecode<{ sub: string }>(token);
-    localStorage.setItem("username", payload.sub);
-    return token;
+    const payload = jwtDecode<{ sub: string, user: string, role: string }>(token);
+    localStorage.setItem("username", payload.user);
+    return payload;
+  },
+  getUsers: async () => {
+    const res = await fetch("/getUsers", {
+      method: "GET",
+      headers: { Authorization: `Bearer ${localStorage.getItem(TOKEN_KEY)}`}
+    })
+    const data = await res.json()
+    console.log(data)
+    return data
   },
   isLoggedIn: () => {
     !!localStorage.getItem(TOKEN_KEY);
