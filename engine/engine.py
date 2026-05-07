@@ -277,8 +277,18 @@ def current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
 
 @app.post("/changeModel")
 def changeModel(model: Model):
-    MODEL = model
-    print(f"Novo modelo selecionando{MODEL}")
+    global MODEL
+    MODEL = model.model
+    
+    try:
+        ollama.chat(model=MODEL, messages=[{"role": "user", "content": "ok"}], keep_alive=0)
+    except:
+        pass
+    
+    ollama.pull(model.model)  # garante que o modelo existe localmente
+    
+    print(f"Modelo trocado para: {MODEL}")
+    return {"message": f"Modelo trocado para {MODEL}"}
     
 @app.post("/register")
 def register(user: UserCreate):
@@ -446,7 +456,7 @@ async def answer(request_data: Ask, user=Depends(current_user)):
     async def generate():
         print(f"id_resposta:{id_resposta}")
         yield json.dumps({"type": "id", "id": id_resposta}) + "\n"
-        w
+        
         loop = asyncio.get_event_loop()
         stream = await loop.run_in_executor(
             None,  # usa thread pool padrão
@@ -486,6 +496,8 @@ async def answer(request_data: Ask, user=Depends(current_user)):
 
 # Servir frontend React se a pasta dist existir
 if os.path.exists(DIST_PATH):
+    print(f"DIST_PATH: {DIST_PATH}")
+    print(f"dist existe: {os.path.exists(DIST_PATH)}")
     app.mount("/assets", StaticFiles(directory=os.path.join(DIST_PATH, "assets")), name="assets")
 
     @app.get("/{full_path:path}")
@@ -500,6 +512,8 @@ if __name__ == "__main__":
 # Comando para rodar o servidor | python -m uvicorn engine:app --host 0.0.0.0 --port 8000 --reload
 #  Comando para buildar o executável:
 """
+Gerar build para Windows:
+
 python -m PyInstaller --onefile --name ditoo-server \
   --add-data "dist;dist" \
   --collect-all chromadb \
@@ -518,6 +532,36 @@ python -m PyInstaller --onefile --name ditoo-server \
   --collect-all asyncio \
   --collect-all sqlalchemy \
   --collect-all python-multipart \
+  --hidden-import uvicorn.logging \
+  --hidden-import uvicorn.loops \
+  --hidden-import uvicorn.loops.auto \
+  --hidden-import uvicorn.protocols \
+  --hidden-import uvicorn.protocols.http.auto \
+  --hidden-import uvicorn.lifespan \
+  --hidden-import uvicorn.lifespan.on \
+  engine.py
+"""
+
+""""
+Gerar build para Linux:
+python -m PyInstaller --onefile --name ditoo-server \
+  --add-data "dist:dist" \
+  --collect-all chromadb \
+  --collect-all onnxruntime \
+  --collect-all tokenizers \
+  --collect-all watchdog \
+  --collect-all zeroconf \
+  --collect-all ollama \
+  --collect-all fastapi \
+  --collect-all uvicorn \
+  --collect-all passlib \
+  --collect-all jose \
+  --collect-all openpyxl \
+  --collect-all dotenv \
+  --collect-all fitz \
+  --collect-all asyncio \
+  --collect-all sqlalchemy \
+  --collect-all "python-multipart" \
   --hidden-import uvicorn.logging \
   --hidden-import uvicorn.loops \
   --hidden-import uvicorn.loops.auto \
