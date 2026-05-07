@@ -201,8 +201,8 @@ const CONST_FOLDERS = [
 const MODELS = [
   { value: "qwen2.5:7b", label: "Qwen 2.5 7B", tag: "Recomendado" },
   { value: "deepseek-r1:8b", label: "DeepSeek R1 8B", tag: "Preciso" },
-  { value: "deepseek-r1:1.5b", label: "DeepSeek R1 1.5B", tag: "Leve" },
   { value: "llama3.2:3b", label: "Llama 3.2 3B", tag: "Rápido" },
+  { value: "qwen2.5:1.5b", label: "Qwen 2.5 1.5B", tag: "Muito Leve" },
 ];
 
 // Cabeçalho
@@ -406,8 +406,10 @@ function UserSettings() {
 
 // ─── Aba: Configurações de Sistema ──────────────────────────────────────────
 
+
+
 function SystemSettings() {
-  const [model, setModel] = useState("deepseek-r1:8b");
+  const [model, setModel] = useState("qwen2.5:7b");
   const [parallelReqs, setParallel] = useState(3);
   const [folders, setFolders] = useState(CONST_FOLDERS);
   const [, setUsers] = useState(CONST_USERS);
@@ -418,6 +420,11 @@ function SystemSettings() {
     password: "",
     role: "user",
   });
+
+  useEffect(() => {
+    console.log("Model changed:", model);
+    api.changeModel(model)
+}, [model])
 
   function removeFolder(id: number) {
     setFolders((f) => f.filter((x) => x.id !== id));
