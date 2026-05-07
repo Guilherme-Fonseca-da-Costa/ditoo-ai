@@ -62,3 +62,7 @@ users = db.query(User).filter(User.email == "john@example.com").all()
 print(f"Users in database: {[user.name for user in users]}")
 """
 
+"""
+Gerar usuário admin para teste:
+curl -X POST http://localhost:8000/register   -H "Content-Type: application/json"   -d "{\"username\": \"Master\", \"email\": \"master@gmail.com\", \"password\": \"123\", \"role\": \"admin\"}"
+"""
