@@ -71,7 +71,6 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ model: model }),
     });
-    console.log(res.json());
     return res.json();
   },
 };
