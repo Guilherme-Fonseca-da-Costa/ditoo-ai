@@ -17,6 +17,9 @@ from fastapi import Depends, HTTPException, UploadFile, File
 import shutil
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import datetime
+from chromadb.utils import embedding_functions
+embedding = embedding_functions.SentenceTransformerEmbeddingFunction(
+    model_name="intfloat/multilingual-e5-large")
 
 
 os.environ["OLLAMA_NUM_PARALLEL"] = "4"
@@ -126,7 +129,10 @@ class Ask(BaseModel):
 
 # --- ChromaDB --- Banco de dados vetorial para armazenar os blocos de texto dos documentos
 client = chromadb.PersistentClient(path=VENV_PATH)
-collection = client.get_or_create_collection(name="meus_documentos")
+collection = client.get_or_create_collection(
+    name="meus_documentos",
+    embedding_function=embedding
+)
 
 
 # --- Watchdog --- Observa a pasta de documentos e indexa novos arquivos automaticamente
@@ -192,10 +198,14 @@ app.add_middleware(
 
 
 # Splitter --- Divide o texto em blocos menores para indexação
-def splitter(texto, chunk_length=800, overlap=400):
+def splitter(texto, chunk_length=500, overlap=250):
     chunks = []
     for i in range(0, len(texto), chunk_length - overlap):
         chunks.append(texto[i:i + chunk_length])
+
+    if len(chunks) >= 2 and len(chunks[-1].strip()) < 150:
+        chunks[-2] = chunks[-2] + " " + chunks[-1]
+        chunks.pop()
     return chunks
 
 
@@ -360,7 +370,7 @@ async def answer(request_data: Ask, user=Depends(current_user)):
 
     results = collection.query(
         query_texts=[request_data.texto],
-        n_results=10,
+        n_results=20,
         include=["documents", "metadatas", "distances"]
     )
 
@@ -441,11 +451,11 @@ async def answer(request_data: Ask, user=Depends(current_user)):
     prompt_sistema = f"""
     Você é o Ditoo, um assistente de pesquisa.
     Responda sempre em Português do Brasil.
-    Use APENAS o CONTEXTO abaixo para responder à pergunta.
-    Se a resposta não estiver no CONTEXTO, diga exatamente: "Não encontrei essa informação nos arquivos."
-    Não invente informações. Não use conhecimento externo.
-    Se a informação estiver parcialmente no contexto, responda com o que houver disponível.
-    Seja direto e objetivo na resposta.
+    Use o CONTEXTO abaixo para responder à pergunta.
+    O contexto pode vir em fragmentos — analise todos os trechos e conecte as informações.
+    Faça inferências razoáveis baseadas no contexto quando necessário.
+    Só diga "Não encontrei essa informação nos arquivos" se não houver NENHUMA pista no contexto.
+    Se houver indícios parciais, responda com base neles e explique que é com base nos trechos disponíveis.
     
     CONTEXTO:
     {contexto}
