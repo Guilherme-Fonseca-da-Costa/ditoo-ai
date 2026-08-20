@@ -1,4 +1,4 @@
-from database.db import SessionLocal, User, engine
+from database.db import Conversation, Message, SessionLocal, User, engine
 import os
 import sys
 import subprocess
@@ -17,6 +17,7 @@ from fastapi import Depends, HTTPException, UploadFile, File
 import shutil
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import datetime
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey
 from chromadb.utils import embedding_functions
 embedding = embedding_functions.SentenceTransformerEmbeddingFunction(
     model_name="intfloat/multilingual-e5-large")
@@ -125,6 +126,7 @@ async def lifespan(app: FastAPI):
 
 class Ask(BaseModel):
     texto: str
+    conversationId: str | None = None  # ID da conversa, se aplicável
 
 
 # --- ChromaDB --- Banco de dados vetorial para armazenar os blocos de texto dos documentos
@@ -360,6 +362,30 @@ async def upload_file(file: UploadFile = File(...), user=Depends(current_user)):
 # Endpoint para receber perguntas, consultar o ChromaDB e retornar respostas geradas pelo modelo
 @app.post("/ask")
 async def answer(request_data: Ask, user=Depends(current_user)):
+    db = SessionLocal()
+    db_user = db.query(User).filter_by(email=user).first()
+
+    if request_data.conversationId:
+        conversation = db.query(Conversation).filter_by(id=request_data.conversationId, user_id=db_user.id).first()
+        if not conversation:
+            raise HTTPException(status_code=404, detail="Conversa não encontrada")
+    else:
+        conversation = Conversation(user_id=db_user.id)
+        db.add(conversation)
+        db.commit()
+        db.refresh(conversation)
+
+    history = db.query(Message).filter_by(conversation_id=conversation.id).order_by(Message.created_at.desc()).all()
+    print(f"DEBUG: Histórico de mensagens Inicial: {[{'role': m.role, 'content': m.content} for m in history]}")
+    MAX_HISTORY = 15
+    memory = history[:MAX_HISTORY]
+    memory.reverse() 
+
+    db.add(Message(conversation_id=conversation.id, role="user", content=request_data.texto))
+    db.commit()
+
+   
+
     percentResult = 0
     max_fonts = 3
     context_parts = []
@@ -462,36 +488,52 @@ async def answer(request_data: Ask, user=Depends(current_user)):
     """
 
     id_resposta = str(uuid.uuid4())
+    messages = [{'role': 'system', 'content': prompt_sistema}]
+    for msg in memory:
+        role = "assistant" if msg.role == "assistant" else "user"
+        messages.append({'role': role, 'content': msg.content})
+    messages.append({'role': 'user', 'content': request_data.texto})
+
 
     async def generate():
         print(f"id_resposta:{id_resposta}")
-        yield json.dumps({"type": "id", "id": id_resposta}) + "\n"
-        
+        print(f"DEBUG: Prompt do sistema: {prompt_sistema}")
+        print(f"DEBUG: Memória: {memory}")
+        print(f"DEBUG: Histórico de mensagens: {messages}")
+        yield json.dumps({"type": "id", "id": id_resposta, "conversationId": conversation.id}) + "\n"
+
         loop = asyncio.get_event_loop()
         stream = await loop.run_in_executor(
             None,  # usa thread pool padrão
             lambda: ollama.chat(
                 model=MODEL,
-                messages=[
-                    {'role': 'system', 'content': prompt_sistema},
-                    {'role': 'user', 'content': request_data.texto}
-                ],
+                messages=messages,
                 stream=True,
                 keep_alive=-1
             )
         )
 
+        final_response = ""
+
         for chunk in stream:
             content = chunk['message']['content']
+            final_response += content
+            print(f"DEBUG: Conteúdo do chunk: {content}")
             yield json.dumps({
                 "type": "content",
                 "text": content,
                 "id": id_resposta,
                 "fontes": fonts,
                 "winner": winnerFonts,
-                "percent": percents
+                "percent": percents,
+                "conversationId": conversation.id
             }) + "\n"
             await asyncio.sleep(0)
+
+        
+        db.add(Message(conversation_id=conversation.id, role="assistant", content=final_response))
+        db.commit()
+        print(f"DEBUG: Resposta final: {final_response} - FIM DA RESPOSTA")
 
     return StreamingResponse(
     generate(),
