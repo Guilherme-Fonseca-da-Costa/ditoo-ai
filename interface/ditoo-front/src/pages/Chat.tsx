@@ -27,7 +27,7 @@ interface Message {
 }
 
 interface HistoryItem {
-  id: number;
+  id: string;
   label: string;
   messages: Message[];
 }
@@ -645,15 +645,15 @@ export default function Chat() {
   const [showUpload, setShowUpload] = useState(false);
   const [showConfig, setShowConfig] = useState(false);
   const [activeSources, setActiveSources] = useState<Source[]>([]);
-  const messageRefs = useRef<Record<number, HTMLDivElement | null>>({});
+  const messageRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const username = localStorage.getItem("username");
 
   // histórico de conversas
   const [history, setHistory] = useState<HistoryItem[]>([]);
-  const [activeHistoryId, setActiveHistoryId] = useState<number | null>(null);
+  const [activeHistoryId, setActiveHistoryId] = useState<string | null>(null);
 
   // impede que a bolha da IA seja criada antes de chegar o primeiro texto, evitando bolhas vazias
-  const [aiMsgId, setAiMsgId] = useState<number | null>(null);
+  const [aiMsgId, setAiMsgId] = useState<string | null>(null);
 
   // referência para rolar a conversa para o final quando chegar mensagem nova
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -692,16 +692,19 @@ export default function Chat() {
     setLoading(true);
     setAiMsgId(null);
 
-    // envia para o histórico
-    const newId = Date.now();
-    if (activeHistoryId == null) {
+    // id temporário só para identificar a entrada no state local do histórico
+    // será substituído pelo conversationId real assim que o backend responder
+    const tempId = activeHistoryId ?? Date.now().toString();
+    const isNewConversation = activeHistoryId == null;
+
+    if (isNewConversation) {
       const newEntry: HistoryItem = {
-        id: newId,
+        id: tempId,
         label: text.slice(0, 30) + (text.length > 30 ? "…" : ""),
         messages: updatedMessages,
       };
       setHistory((prev) => [newEntry, ...prev]);
-      setActiveHistoryId(newId);
+      setActiveHistoryId(tempId);
     } else {
       setHistory((prev) =>
         prev.map((h) =>
@@ -709,6 +712,7 @@ export default function Chat() {
         ),
       );
     }
+
     try {
       const response = await fetch("/ask", {
         method: "POST",
@@ -716,10 +720,13 @@ export default function Chat() {
           "Content-Type": "application/json",
           Authorization: `Bearer ${localStorage.getItem(TOKEN_KEY)}`,
         },
-        body: JSON.stringify({ texto: text }),
+        body: JSON.stringify({
+          texto: text,
+          // só manda conversationId se já tivermos um real (não o temporário local)
+          conversationId: isNewConversation ? null : activeHistoryId,
+        }),
       });
-      console.log(response.headers);
-      console.log("Response status:", response.status);
+
       if (!response.body) throw new Error("Sem corpo na resposta");
 
       const newAiId = Date.now() + 1;
@@ -727,6 +734,7 @@ export default function Chat() {
       const decoder = new TextDecoder();
       let lastSources: Source[] = [];
       let firstContent = true;
+      let realConversationId: string | null = null;
 
       while (true) {
         const { done, value } = await reader.read();
@@ -738,10 +746,25 @@ export default function Chat() {
           try {
             const data = JSON.parse(line);
 
+            // recebe o conversationId real do backend
+            if (data.type === "id") {
+              if (data.conversationId) {
+                realConversationId = data.conversationId;
+                if (isNewConversation) {
+                  setActiveHistoryId(realConversationId);
+                  setHistory((prev) =>
+                    prev.map((h) =>
+                      h.id === tempId ? { ...h, id: realConversationId! } : h,
+                    ),
+                  );
+                }
+              }
+            }
+
             if (data.type === "content") {
               if (firstContent) {
                 firstContent = false;
-                setAiMsgId(newAiId);
+                setAiMsgId(newAiId.toString());
                 setMessages((prev) => [
                   ...prev,
                   { id: newAiId, sender: "ai", text: data.text ?? "" },
@@ -777,10 +800,11 @@ export default function Chat() {
       );
       setActiveSources(lastSources);
 
-      // Atualiza mensagens no histórico
+      // atualiza mensagens no histórico, usando o id real (se já tiver chegado) ou o temporário
+      const finalHistoryId = realConversationId ?? tempId;
       setHistory((prev) =>
         prev.map((h) =>
-          h.id === newId
+          h.id === finalHistoryId
             ? {
                 ...h,
                 messages: [
@@ -840,15 +864,17 @@ export default function Chat() {
       setLoading(true);
       setAiMsgId(null);
 
-      const newId = Date.now();
-      if (activeHistoryId == null) {
+      const tempId = activeHistoryId ?? Date.now().toString();
+      const isNewConversation = activeHistoryId == null;
+
+      if (isNewConversation) {
         const newEntry: HistoryItem = {
-          id: newId,
+          id: tempId,
           label: text.slice(0, 30) + (text.length > 30 ? "…" : ""),
           messages: updatedMessages,
         };
         setHistory((prev) => [newEntry, ...prev]);
-        setActiveHistoryId(newId);
+        setActiveHistoryId(tempId);
       } else {
         setHistory((prev) =>
           prev.map((h) =>
@@ -863,7 +889,10 @@ export default function Chat() {
           "Content-Type": "application/json",
           Authorization: `Bearer ${localStorage.getItem(TOKEN_KEY)}`,
         },
-        body: JSON.stringify({ texto: text }),
+        body: JSON.stringify({
+          texto: text,
+          conversationId: isNewConversation ? null : activeHistoryId,
+        }),
       })
         .then(async (response) => {
           if (!response.body) return;
@@ -872,6 +901,7 @@ export default function Chat() {
           const decoder = new TextDecoder();
           let lastSources: Source[] = [];
           let firstContent = true;
+          let realConversationId: string | null = null;
 
           while (true) {
             const { done, value } = await reader.read();
@@ -881,10 +911,27 @@ export default function Chat() {
               if (!line.trim()) continue;
               try {
                 const data = JSON.parse(line);
+
+                if (data.type === "id") {
+                  if (data.conversationId) {
+                    realConversationId = data.conversationId;
+                    if (isNewConversation) {
+                      setActiveHistoryId(realConversationId);
+                      setHistory((prev) =>
+                        prev.map((h) =>
+                          h.id === tempId
+                            ? { ...h, id: realConversationId! }
+                            : h,
+                        ),
+                      );
+                    }
+                  }
+                }
+
                 if (data.type === "content") {
                   if (firstContent) {
                     firstContent = false;
-                    setAiMsgId(newAiId);
+                    setAiMsgId(newAiId.toString());
                     setMessages((prev) => [
                       ...prev,
                       { id: newAiId, sender: "ai", text: data.text ?? "" },
@@ -917,6 +964,26 @@ export default function Chat() {
             ),
           );
           setActiveSources(lastSources);
+
+          const finalHistoryId = realConversationId ?? tempId;
+          setHistory((prev) =>
+            prev.map((h) =>
+              h.id === finalHistoryId
+                ? {
+                    ...h,
+                    messages: [
+                      ...updatedMessages,
+                      {
+                        id: newAiId,
+                        sender: "ai" as const,
+                        text: "",
+                        sources: lastSources,
+                      },
+                    ],
+                  }
+                : h,
+            ),
+          );
         })
         .catch(() => {})
         .finally(() => {
@@ -925,7 +992,6 @@ export default function Chat() {
         });
     }, 0);
   }
-
   function handleNewChat() {
     setMessages([]);
     setActiveSources([]);
