@@ -25,7 +25,7 @@ embedding = embedding_functions.SentenceTransformerEmbeddingFunction(
 
 os.environ["OLLAMA_NUM_PARALLEL"] = "4"
 os.environ["OLLAMA_MAX_LOADED_MODELS"] = "1"
-
+os.environ["OLLAMA_CONTEXT_LENGTH"] = "8192"
 # Verifica se o Ollama já está rodando antes de subir outro
 def ollama_ativo():
     try:
@@ -126,7 +126,8 @@ async def lifespan(app: FastAPI):
 
 class Ask(BaseModel):
     texto: str
-    conversationId: str | None = None  # ID da conversa, se aplicável
+    conversationId: str | None = None
+    title: str | None = None 
 
 
 # --- ChromaDB --- Banco de dados vetorial para armazenar os blocos de texto dos documentos
@@ -301,7 +302,52 @@ def changeModel(model: Model):
     
     print(f"Modelo trocado para: {MODEL}")
     return {"message": f"Modelo trocado para {MODEL}"}
-    
+
+@app.get("/fetchMessages/{conversation_id}")
+async def fetch_messages(conversation_id: str, user=Depends(current_user)):
+    db = SessionLocal()
+    try:
+        db_user = db.query(User).filter_by(email=user).first()
+        if not db_user:
+            raise HTTPException(status_code=404, detail="Usuário não encontrado")
+
+        messages = (
+            db.query(Message)
+            .filter_by(conversation_id=conversation_id)
+            .order_by(Message.created_at.asc())
+            .all()
+        )
+        
+        print("Mensagens" + str([m.content for m in messages]))
+        return [
+            {"id": m.id, "sender": m.role, "text": m.content}
+            for m in messages
+        ]
+    finally:
+        db.close()
+
+@app.get("/getHistory")
+async def get_conversations(user=Depends(current_user)):
+    db = SessionLocal()
+    try:
+        db_user = db.query(User).filter_by(email=user).first()
+        if not db_user:
+            raise HTTPException(status_code=404, detail="Usuário não encontrado")
+
+        conversations = (
+            db.query(Conversation)
+            .filter_by(user_id=db_user.id)
+            .order_by(Conversation.updated_at.desc())
+            .all()
+        )
+
+        return [
+            {"id": c.id, "title": c.title, "updatedAt": c.updated_at.isoformat()}
+            for c in conversations
+        ]
+    finally:
+        db.close()
+
 @app.post("/register")
 def register(user: UserCreate):
     db = SessionLocal()
@@ -370,7 +416,7 @@ async def answer(request_data: Ask, user=Depends(current_user)):
         if not conversation:
             raise HTTPException(status_code=404, detail="Conversa não encontrada")
     else:
-        conversation = Conversation(user_id=db_user.id)
+        conversation = Conversation(user_id=db_user.id, title=request_data.title or "Nova Conversa")
         db.add(conversation)
         db.commit()
         db.refresh(conversation)
@@ -436,23 +482,30 @@ async def answer(request_data: Ask, user=Depends(current_user)):
     print(f"DEBUG: Similaridade por fonte: {smlFonts}")
     print(f"DEBUG: Chunks reais por arquivo: {chunk_counts}")
 
-    winnerFont = max(smlFonts, key=smlFonts.get)
-    max_score = smlFonts[winnerFont]
+    if not smlFonts:
+    # nenhum documento relevante encontrado (base vazia ou sem match)
+        winnerFonts = []
+        percents = {}
+        contexto = "Nenhum documento disponível na base de conhecimento."
 
-    winnerFonts = [
-        fonte for fonte, score in smlFonts.items()
-        if max_score - score <= MIN_GAP
-    ]
-    print(f"DEBUG: Fontes vencedoras ({MIN_GAP}): {winnerFonts}")
+    else:
+        winnerFont = max(smlFonts, key=smlFonts.get)
+        max_score = smlFonts[winnerFont]
 
-    best_raw = max(rawScores[f] for f in winnerFonts)
-    winnerFonts = sorted(winnerFonts, key=lambda f: smlFonts[f], reverse=True)
+        winnerFonts = [
+            fonte for fonte, score in smlFonts.items()
+            if max_score - score <= MIN_GAP
+        ]
+        print(f"DEBUG: Fontes vencedoras ({MIN_GAP}): {winnerFonts}")
 
-    percents = {
-        fonte: round((rawScores[fonte] / best_raw) * 100)
-        for fonte in winnerFonts
-    }
-    print(f"DEBUG: Percentuais por fonte: {percents}")
+        best_raw = max(rawScores[f] for f in winnerFonts)
+        winnerFonts = sorted(winnerFonts, key=lambda f: smlFonts[f], reverse=True)
+
+        percents = {
+            fonte: round((rawScores[fonte] / best_raw) * 100)
+            for fonte in winnerFonts
+        }
+        print(f"DEBUG: Percentuais por fonte: {percents}")
     
 
     if results['documents'] and results['documents'][0]:
@@ -475,13 +528,34 @@ async def answer(request_data: Ask, user=Depends(current_user)):
         print(f"DEBUG: Sem Contexto construído com {contexto}.")
 
     prompt_sistema = f"""
-    Você é o Ditoo, um assistente de pesquisa.
-    Responda sempre em Português do Brasil.
-    Use o CONTEXTO abaixo para responder à pergunta.
-    O contexto pode vir em fragmentos — analise todos os trechos e conecte as informações.
-    Faça inferências razoáveis baseadas no contexto quando necessário.
-    Só diga "Não encontrei essa informação nos arquivos" se não houver NENHUMA pista no contexto.
-    Se houver indícios parciais, responda com base neles e explique que é com base nos trechos disponíveis.
+    Você é o Ditoo, um assistente de IA interno da empresa, especializado em ajudar pessoas a encontrar e entender informações nos documentos da organização.
+
+## Como se comunicar
+
+Converse de forma natural, como uma pessoa competente e atenciosa conversaria — não como um sistema que gera relatórios. Isso significa:
+
+- Escreva em prosa corrida na maioria das vezes. Só use listas ou tópicos quando a informação for genuinamente sequencial (passo a passo) ou quando enumerar itens deixa mais claro que texto corrido — não use listas por padrão.
+- Varie a estrutura das respostas. Nem toda resposta precisa de introdução + tópicos + conclusão. Às vezes a melhor resposta é um parágrafo direto.
+- Combine informações relacionadas em vez de fragmentar tudo em bullets soltos.
+- Para mensagens sociais (agradecimentos, cumprimentos, confirmações, despedidas) ou comentários que não pedem informação, responda de forma breve e natural — uma frase ou duas, sem estrutura, sem tópicos, sem repetir contexto de documentos.
+- Não repita a pergunta do usuário antes de responder.
+- Evite frases de preenchimento como "Aqui estão as informações que você pediu" — vá direto ao ponto.
+- Adapte o tamanho da resposta à pergunta: perguntas simples merecem respostas curtas; perguntas complexas ou que pedem análise merecem mais desenvolvimento.
+
+## Como usar o contexto de documentos
+
+Você recebe abaixo um CONTEXTO extraído de documentos internos, relevante (ou não) à mensagem atual.
+
+- Se a mensagem pedir informação que está no contexto, use-o como base da resposta, conectando informações de diferentes trechos quando fizer sentido.
+- Se o contexto trouxer apenas indícios parciais, responda com base neles e diga que é uma inferência a partir do que está disponível — sem inventar detalhes que não estão lá.
+- Se a mensagem não tiver relação com o contexto (perguntas sociais, de esclarecimento sobre a própria conversa, ou fora do escopo dos documentos), ignore o contexto completamente e responda apenas com base na conversa e no seu conhecimento geral, deixando claro quando a resposta não vem dos documentos da empresa.
+- Só diga que não encontrou a informação se não houver absolutamente nenhuma pista no contexto relacionada à pergunta.
+- Nunca cite nomes de arquivo ou metadados de forma mecânica dentro do texto (ex: "de acordo com relatorio.pdf") — as fontes já são exibidas separadamente na interface.
+
+## Idioma
+
+Responda sempre em Português do Brasil, em tom profissional mas acessível — como um colega experiente ajudando, não um manual técnico.
+
     
     CONTEXTO:
     {contexto}
@@ -490,7 +564,7 @@ async def answer(request_data: Ask, user=Depends(current_user)):
     id_resposta = str(uuid.uuid4())
     messages = [{'role': 'system', 'content': prompt_sistema}]
     for msg in memory:
-        role = "assistant" if msg.role == "assistant" else "user"
+        role = "ai" if msg.role == "ai" else "user"
         messages.append({'role': role, 'content': msg.content})
     messages.append({'role': 'user', 'content': request_data.texto})
 
@@ -531,7 +605,7 @@ async def answer(request_data: Ask, user=Depends(current_user)):
             await asyncio.sleep(0)
 
         
-        db.add(Message(conversation_id=conversation.id, role="assistant", content=final_response))
+        db.add(Message(conversation_id=conversation.id, role="ai", content=final_response))
         db.commit()
         print(f"DEBUG: Resposta final: {final_response} - FIM DA RESPOSTA")
 
@@ -623,3 +697,6 @@ python -m PyInstaller --onefile --name ditoo-server \
   --hidden-import uvicorn.lifespan.on \
   engine.py
 """
+
+"É possível que de erro ao rodar na rede, veja se a redfe está como publica ou privada, teste alterar para privada"
+"É preciso fazer um ajuste para evitar erro caso não haja nenhum arquivo indexado"

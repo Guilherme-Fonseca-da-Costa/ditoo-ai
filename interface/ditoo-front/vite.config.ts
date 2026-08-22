@@ -37,6 +37,16 @@ export default defineConfig({
         changeOrigin: true,
         secure: false,
       },
+        '/getHistory': {
+        target: 'http://127.0.0.1:8000',
+        changeOrigin: true,
+        secure: false,
+      },
+      '/fetchMessages': {
+        target: 'http://127.0.0.1:8000',
+        changeOrigin: true,
+        secure: false,
+      },
     },
   },
 })

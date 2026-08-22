@@ -644,7 +644,7 @@ body {
   font-size: 14px;
   line-height: 1.65;
   max-width: 72%;
-  white-space: pre-wrap;
+  
   word-break: break-word;
 }
 
@@ -1245,3 +1245,4 @@ body {
     padding: 20px 10px;
   }
 }
+

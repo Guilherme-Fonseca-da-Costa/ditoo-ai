@@ -3,6 +3,7 @@ import { useNavigate } from "react-router";
 import DitooLogo from "../components/DitooLogo";
 import ReactMarkdown from "react-markdown";
 
+
 import {
   useTheme,
   ACCENT_COLORS,
@@ -21,14 +22,14 @@ interface Source {
 
 interface Message {
   id: number;
-  sender: "user" | "ai";
+  sender: "user" | "ai" | "assistant";
   text: string;
   sources?: Source[];
 }
 
 interface HistoryItem {
   id: string;
-  label: string;
+  title: string;
   messages: Message[];
 }
 
@@ -604,7 +605,7 @@ function HistoryEntry({
           </span>
         )}
         <Icon.Chat />
-        <span className="history-label">{item.label}</span>
+        <span className="history-label">{item.title}</span>
       </div>
 
       {/* Perguntas expandidas */}
@@ -653,7 +654,7 @@ export default function Chat() {
   const [activeHistoryId, setActiveHistoryId] = useState<string | null>(null);
 
   // impede que a bolha da IA seja criada antes de chegar o primeiro texto, evitando bolhas vazias
-  const [aiMsgId, setAiMsgId] = useState<string | null>(null);
+  const [aiMsgId, setAiMsgId] = useState<number | null>(null);
 
   // referência para rolar a conversa para o final quando chegar mensagem nova
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -662,7 +663,13 @@ export default function Chat() {
 
   useEffect(() => {
     if (!api.getToken()) navigate("/login");
+   
   });
+
+  useEffect(() => {
+    console.log("Fetching history..." + fetchHistory());
+   
+  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -678,6 +685,35 @@ export default function Chat() {
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, loading]);
+
+  async function fetchHistory() {
+    try {
+      const conversations = await api.getHistory();
+      setHistory(conversations.map((c: any) => ({
+        id: c.id,
+        title: c.title ?? "Nova Conversa",
+        messages: []
+      })));
+      console.log("Histórico carregado:", conversations);
+    } catch (err) {
+      console.error("Erro ao buscar histórico:", err);
+    }
+  }
+
+  // ─────────────────────── resgatar mensagens ─────────────────────
+
+  async function fetchMessages(historyFetchId: string | null) {
+    console.log("Fetching messages for history ID:", historyFetchId);
+    if (!historyFetchId) {
+      setMessages([]);
+      return;
+    }
+    api.fetchMessages(historyFetchId).then((messages) => {
+      console.log("Messages fetched for history ID:", historyFetchId, messages);
+      setMessages(messages);
+      console.log("Messages set for history ID:", historyFetchId, messages);
+    });
+  }
 
   // ─── enviar mensagem ──────────────────────────────────────────────────────────
 
@@ -700,7 +736,7 @@ export default function Chat() {
     if (isNewConversation) {
       const newEntry: HistoryItem = {
         id: tempId,
-        label: text.slice(0, 30) + (text.length > 30 ? "…" : ""),
+        title: text.slice(0, 30) + (text.length > 30 ? "…" : ""),
         messages: updatedMessages,
       };
       setHistory((prev) => [newEntry, ...prev]);
@@ -724,6 +760,7 @@ export default function Chat() {
           texto: text,
           // só manda conversationId se já tivermos um real (não o temporário local)
           conversationId: isNewConversation ? null : activeHistoryId,
+          title: isNewConversation ? text.slice(0, 30) + (text.length > 30 ? "…" : "") : undefined,
         }),
       });
 
@@ -764,7 +801,7 @@ export default function Chat() {
             if (data.type === "content") {
               if (firstContent) {
                 firstContent = false;
-                setAiMsgId(newAiId.toString());
+                setAiMsgId(newAiId);
                 setMessages((prev) => [
                   ...prev,
                   { id: newAiId, sender: "ai", text: data.text ?? "" },
@@ -870,7 +907,7 @@ export default function Chat() {
       if (isNewConversation) {
         const newEntry: HistoryItem = {
           id: tempId,
-          label: text.slice(0, 30) + (text.length > 30 ? "…" : ""),
+          title: text.slice(0, 30) + (text.length > 30 ? "…" : ""),
           messages: updatedMessages,
         };
         setHistory((prev) => [newEntry, ...prev]);
@@ -931,7 +968,7 @@ export default function Chat() {
                 if (data.type === "content") {
                   if (firstContent) {
                     firstContent = false;
-                    setAiMsgId(newAiId.toString());
+                    setAiMsgId(newAiId);
                     setMessages((prev) => [
                       ...prev,
                       { id: newAiId, sender: "ai", text: data.text ?? "" },
@@ -1151,8 +1188,10 @@ export default function Chat() {
                   item={item}
                   isActive={activeHistoryId === item.id && messages.length > 0}
                   onClick={() => {
-                    setActiveHistoryId(item.id);
-                    setMessages(item.messages);
+                    console.log("Clicou no histórico:", item.id);
+                    setActiveHistoryId(item.id)
+                    fetchMessages(item.id)
+                    //setMessages(item.messages);
                   }}
                   onMessageClick={scrollToMessage}
                 />
@@ -1216,7 +1255,7 @@ export default function Chat() {
                 .filter(
                   (msg) =>
                     !(
-                      msg.sender === "ai" &&
+                      msg.sender === "assistant" &&
                       msg.text === "" &&
                       loading &&
                       msg.id === aiMsgId
@@ -1230,13 +1269,13 @@ export default function Chat() {
                     <div className={`bubble ${msg.sender}`}>
                       <div
                         key={msg.id}
-                        className={`msg-wrap ${msg.sender}`}
+                        className={` ${msg.sender}`}
                         ref={(el) => {
                           messageRefs.current[msg.id] = el;
                         }}
                       >
                         <ReactMarkdown>{msg.text}</ReactMarkdown>
-                        {msg.sender === "ai" &&
+                        {msg.sender === "assistant" &&
                           msg.sources &&
                           msg.sources.length > 0 && (
                             <div
@@ -1320,5 +1359,6 @@ export default function Chat() {
         </aside>
       </div>
     </div>
+    
   );
 }

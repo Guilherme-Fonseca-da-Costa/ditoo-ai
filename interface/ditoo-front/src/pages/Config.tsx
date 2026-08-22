@@ -406,8 +406,6 @@ function UserSettings() {
 
 // ─── Aba: Configurações de Sistema ──────────────────────────────────────────
 
-
-
 function SystemSettings() {
   const [model, setModel] = useState("qwen2.5:7b");
   const [parallelReqs, setParallel] = useState(3);
@@ -421,19 +419,12 @@ function SystemSettings() {
     role: "user",
   });
 
-  useEffect(() => {
-    console.log("Model changed:", model);
-    api.changeModel(model)
-}, [model])
-
   function removeFolder(id: number) {
     setFolders((f) => f.filter((x) => x.id !== id));
   }
   function removeUser(id: number) {
     setUsers((u) => u.filter((x) => x.id !== id));
   }
-
-
 
   function createUser() {
     if (!newUser.name || !newUser.email) return;
@@ -446,227 +437,243 @@ function SystemSettings() {
         role: newUser.role as "admin" | "user",
       },
     ]);
-    setNewUser({ name: "", email: "", password: "", role: "user" })
+    setNewUser({ name: "", email: "", password: "", role: "user" });
 
     api.register(newUser.name, newUser.email, newUser.password, newUser.role);
   }
 
-
   useEffect(() => {
+    const fetchUsers = async () => {
+      const users = await api.getUsers();
+      console.log(users);
+      setDataUsers(users);
+    };
+    fetchUsers();
+  }, []);
 
-  const fetchUsers = async () => {
-    const users = await api.getUsers()
-    console.log(users);
-    setDataUsers(users)
-  }
-  fetchUsers()
-}, []);
-
-  return (<>
-    {api.getToken()?.role === "admin" ? <div className="cfg-content">
-      {/* ── Modelo de Linguagem ── */}
-      <SectionHeader
-        title="Modelo de Linguagem"
-        desc="Selecione o LLM que será usado pelo Ditoo. A mudança é aplicada imediatamente para novas conversas."
-      />
-      <div className="cfg-card">
-        <div className="cfg-model-list">
-          {MODELS.map((m) => (
-            <div
-              key={m.value}
-              className={`cfg-model-option ${model === m.value ? "active" : ""}`}
-              onClick={() => setModel(m.value)}
-            >
-              <div className="cfg-model-radio">
-                {model === m.value && <div className="cfg-model-radio-dot" />}
-              </div>
-              <div className="cfg-model-info">
-                <span className="cfg-model-name">{m.label}</span>
-                <span className="cfg-model-tag">{m.tag}</span>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* ── Performance ── */}
-      <SectionHeader
-        title="Performance"
-        desc="Configure o comportamento do servidor de inferência."
-      />
-      <div className="cfg-card">
-        <SettingRow
-          label="Paralelismo de requisições"
-          hint="Defina o máximo de requisições  (1 - 10) a serem processadas simultaneamente."
-          warning="Atenção: Valores altos aumentam a carga no hardware."
-        >
-          <div className="cfg-number-control">
-            <button
-              className="cfg-number-btn"
-              onClick={() => setParallel((v) => Math.max(1, v - 1))}
-              disabled={parallelReqs <= 1}
-            >
-              −
-            </button>
-            <span className="cfg-number-value">{parallelReqs}</span>
-            <button
-              className="cfg-number-btn"
-              onClick={() => setParallel((v) => Math.min(10, v + 1))}
-              disabled={parallelReqs >= 10}
-            >
-              +
-            </button>
-          </div>
-        </SettingRow>
-      </div>
-
-      {/* ── Pastas ── */}
-      <SectionHeader
-        title="Pastas de Documentos"
-        desc="Gerencie onde o Ditoo busca e indexa seus arquivos."
-      />
-      <div className="cfg-card">
-        {folders.length === 0 ? (
-          <p className="cfg-empty-msg">Nenhuma pasta configurada.</p>
-        ) : (
-          <div className="cfg-folder-list">
-            {folders.map((f) => (
-              <div key={f.id} className="cfg-folder-item">
-                <div className="cfg-folder-icon">
-                  <Icons.Folder />
-                </div>
-                <div className="cfg-folder-info">
-                  <span className="cfg-folder-name">{f.name}</span>
-                  <span className="cfg-folder-path font-mono">{f.path}</span>
-                </div>
-                <span
-                  className={`cfg-folder-badge ${f.type === "secret" ? "secret" : ""}`}
+  return (
+    <>
+      {api.getToken()?.role === "admin" ? (
+        <div className="cfg-content">
+          {/* ── Modelo de Linguagem ── */}
+          <SectionHeader
+            title="Modelo de Linguagem"
+            desc="Selecione o LLM que será usado pelo Ditoo. A mudança é aplicada imediatamente para novas conversas."
+          />
+          <div className="cfg-card">
+            <div className="cfg-model-list">
+              {MODELS.map((m) => (
+                <div
+                  key={m.value}
+                  className={`cfg-model-option ${model === m.value ? "active" : ""}`}
+                  onClick={() => setModel(m.value)}
                 >
-                  {f.type === "secret" ? "Secreta" : "Normal"}
-                </span>
-                <div className="cfg-folder-actions">
-                  <button className="cfg-icon-btn" title="Editar">
-                    <Icons.Edit />
-                  </button>
-                  <button
-                    className="cfg-icon-btn danger"
-                    title="Remover"
-                    onClick={() => removeFolder(f.id)}
-                  >
-                    <Icons.Trash />
-                  </button>
+                  <div className="cfg-model-radio">
+                    {model === m.value && (
+                      <div className="cfg-model-radio-dot" />
+                    )}
+                  </div>
+                  <div className="cfg-model-info">
+                    <span className="cfg-model-name">{m.label}</span>
+                    <span className="cfg-model-tag">{m.tag}</span>
+                  </div>
                 </div>
-              </div>
-            ))}
-          </div>
-        )}
-        <div className="cfg-divider" />
-
-        <button className="cfg-btn-outline" style={{ margin: 14 }}>
-          <Icons.Plus /> Adicionar pasta
-        </button>
-      </div>
-
-      {/* ── Usuários ── */}
-      <SectionHeader
-        title="Gerenciar Usuários"
-        desc="Visualize, edite e remova usuários."
-        warning="Apenas administradores acessam esta seção."
-      />
-      <div className="cfg-card">
-        <div className="cfg-user-list">
-          {dataUsers?.map((u) => (
-            <div key={u.id} className="cfg-user-item">
-              <div className="avatar cfg-user-avatar">
-                {u.username
-                  .split(" ")
-                  .slice(0, 2)
-                  .map((n) => n[0])
-                  .join("")
-                  .toUpperCase()}
-              </div>
-              <div className="cfg-user-info">
-                <span className="cfg-user-name">{u.username}</span>
-                <span className="cfg-user-email font-mono">{u.email}</span>
-              </div>
-              <span
-                className={`cfg-user-badge ${u.role === "admin" ? "admin" : ""}`}
-              >
-                {u.role === "admin" ? "Admin" : "Usuário"}
-              </span>
-              <div className="cfg-user-actions">
-                <button className="cfg-icon-btn" title="Redefinir senha">
-                  <Icons.Key />
-                </button>
-                <button className="cfg-icon-btn" title="Editar">
-                  <Icons.Edit />
-                </button>
-                <button
-                  className="cfg-icon-btn danger"
-                  title="Excluir"
-                  onClick={() => removeUser(u.id)}
-                >
-                  <Icons.Trash />
-                </button>
-              </div>
+              ))}
             </div>
-          ))}
-        </div>
-      </div>
-
-      {/* ── Criar usuário ── */}
-      <div className="cfg-card">
-        <p className="section-label" style={{ margin: 14 }}>
-          Novo usuário
-        </p>
-        <div className="cfg-create-user-grid">
-          <input
-            className="cfg-input"
-            placeholder="Nome completo"
-            value={newUser.name}
-            onChange={(e) =>
-              setNewUser((u) => ({ ...u, name: e.target.value }))
-            }
-          />
-          <input
-            className="cfg-input"
-            placeholder="E-mail"
-            type="email"
-            value={newUser.email}
-            onChange={(e) =>
-              setNewUser((u) => ({ ...u, email: e.target.value }))
-            }
-          />
-          <input
-            className="cfg-input"
-            placeholder="Senha temporária"
-            type="password"
-            value={newUser.password}
-            onChange={(e) =>
-              setNewUser((u) => ({ ...u, password: e.target.value }))
-            }
-          />
-          <select
-            className="cfg-select"
-            value={newUser.role}
-            onChange={(e) =>
-              setNewUser((u) => ({ ...u, role: e.target.value }))
-            }
+          </div>
+          <button
+            onClick={() => {
+              console.log("Model changed:", model);
+              api.changeModel(model)
+            }}
+            style={{ width: 115 }}
+            className="cfg-btn-primary"
           >
-            <option value="user">Usuário Comum</option>
-            <option value="admin">Administrador</option>
-          </select>
-        </div>
-        <div className="cfg-row-action">
-          <button className="cfg-btn-primary" onClick={createUser}>
-            <Icons.Plus /> Criar usuário
+            Aplicar modelo
           </button>
+          {/* ── Performance ── */}
+          <SectionHeader
+            title="Performance"
+            desc="Configure o comportamento do servidor de inferência."
+          />
+          <div className="cfg-card">
+            <SettingRow
+              label="Paralelismo de requisições"
+              hint="Defina o máximo de requisições  (1 - 10) a serem processadas simultaneamente."
+              warning="Atenção: Valores altos aumentam a carga no hardware."
+            >
+              <div className="cfg-number-control">
+                <button
+                  className="cfg-number-btn"
+                  onClick={() => setParallel((v) => Math.max(1, v - 1))}
+                  disabled={parallelReqs <= 1}
+                >
+                  −
+                </button>
+                <span className="cfg-number-value">{parallelReqs}</span>
+                <button
+                  className="cfg-number-btn"
+                  onClick={() => setParallel((v) => Math.min(10, v + 1))}
+                  disabled={parallelReqs >= 10}
+                >
+                  +
+                </button>
+              </div>
+            </SettingRow>
+          </div>
+
+          {/* ── Pastas ── */}
+          <SectionHeader
+            title="Pastas de Documentos"
+            desc="Gerencie onde o Ditoo busca e indexa seus arquivos."
+          />
+          <div className="cfg-card">
+            {folders.length === 0 ? (
+              <p className="cfg-empty-msg">Nenhuma pasta configurada.</p>
+            ) : (
+              <div className="cfg-folder-list">
+                {folders.map((f) => (
+                  <div key={f.id} className="cfg-folder-item">
+                    <div className="cfg-folder-icon">
+                      <Icons.Folder />
+                    </div>
+                    <div className="cfg-folder-info">
+                      <span className="cfg-folder-name">{f.name}</span>
+                      <span className="cfg-folder-path font-mono">
+                        {f.path}
+                      </span>
+                    </div>
+                    <span
+                      className={`cfg-folder-badge ${f.type === "secret" ? "secret" : ""}`}
+                    >
+                      {f.type === "secret" ? "Secreta" : "Normal"}
+                    </span>
+                    <div className="cfg-folder-actions">
+                      <button className="cfg-icon-btn" title="Editar">
+                        <Icons.Edit />
+                      </button>
+                      <button
+                        className="cfg-icon-btn danger"
+                        title="Remover"
+                        onClick={() => removeFolder(f.id)}
+                      >
+                        <Icons.Trash />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="cfg-divider" />
+
+            <button className="cfg-btn-outline" style={{ margin: 14 }}>
+              <Icons.Plus /> Adicionar pasta
+            </button>
+          </div>
+
+          {/* ── Usuários ── */}
+          <SectionHeader
+            title="Gerenciar Usuários"
+            desc="Visualize, edite e remova usuários."
+            warning="Apenas administradores acessam esta seção."
+          />
+          <div className="cfg-card">
+            <div className="cfg-user-list">
+              {dataUsers?.map((u) => (
+                <div key={u.id} className="cfg-user-item">
+                  <div className="avatar cfg-user-avatar">
+                    {u.username
+                      .split(" ")
+                      .slice(0, 2)
+                      .map((n) => n[0])
+                      .join("")
+                      .toUpperCase()}
+                  </div>
+                  <div className="cfg-user-info">
+                    <span className="cfg-user-name">{u.username}</span>
+                    <span className="cfg-user-email font-mono">{u.email}</span>
+                  </div>
+                  <span
+                    className={`cfg-user-badge ${u.role === "admin" ? "admin" : ""}`}
+                  >
+                    {u.role === "admin" ? "Admin" : "Usuário"}
+                  </span>
+                  <div className="cfg-user-actions">
+                    <button className="cfg-icon-btn" title="Redefinir senha">
+                      <Icons.Key />
+                    </button>
+                    <button className="cfg-icon-btn" title="Editar">
+                      <Icons.Edit />
+                    </button>
+                    <button
+                      className="cfg-icon-btn danger"
+                      title="Excluir"
+                      onClick={() => removeUser(u.id)}
+                    >
+                      <Icons.Trash />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* ── Criar usuário ── */}
+          <div className="cfg-card">
+            <p className="section-label" style={{ margin: 14 }}>
+              Novo usuário
+            </p>
+            <div className="cfg-create-user-grid">
+              <input
+                className="cfg-input"
+                placeholder="Nome completo"
+                value={newUser.name}
+                onChange={(e) =>
+                  setNewUser((u) => ({ ...u, name: e.target.value }))
+                }
+              />
+              <input
+                className="cfg-input"
+                placeholder="E-mail"
+                type="email"
+                value={newUser.email}
+                onChange={(e) =>
+                  setNewUser((u) => ({ ...u, email: e.target.value }))
+                }
+              />
+              <input
+                className="cfg-input"
+                placeholder="Senha temporária"
+                type="password"
+                value={newUser.password}
+                onChange={(e) =>
+                  setNewUser((u) => ({ ...u, password: e.target.value }))
+                }
+              />
+              <select
+                className="cfg-select"
+                value={newUser.role}
+                onChange={(e) =>
+                  setNewUser((u) => ({ ...u, role: e.target.value }))
+                }
+              >
+                <option value="user">Usuário Comum</option>
+                <option value="admin">Administrador</option>
+              </select>
+            </div>
+            <div className="cfg-row-action">
+              <button className="cfg-btn-primary" onClick={createUser}>
+                <Icons.Plus /> Criar usuário
+              </button>
+            </div>
+          </div>
         </div>
-      </div>
-    </div> : <div className="alert-admin-need">Este campo é reservado para o Administrador
-      </div>}
-  </>
-    
+      ) : (
+        <div className="alert-admin-need">
+          Este campo é reservado para o Administrador
+        </div>
+      )}
+    </>
   );
 }
 
@@ -674,7 +681,6 @@ type Tab = "user" | "system";
 
 export default function Config() {
   const [tab, setTab] = useState<Tab>("user");
-  
 
   return (
     <div className="cfg-shell">
@@ -700,7 +706,9 @@ export default function Config() {
           disabled={api.getToken()?.role !== "admin"}
         >
           <Icons.Shield /> Sistema
-          {api.getToken()?.role === "admin" && <span className="cfg-nav-lock"></span>}
+          {api.getToken()?.role === "admin" && (
+            <span className="cfg-nav-lock"></span>
+          )}
         </button>
       </nav>
 

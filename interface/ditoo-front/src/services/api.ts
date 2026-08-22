@@ -73,4 +73,18 @@ export const api = {
     });
     return res.json();
   },
+  getHistory: async () => {
+    const res = await fetch("/getHistory", {
+      method: "GET",
+      headers: { Authorization: `Bearer ${localStorage.getItem(TOKEN_KEY)}` },
+    });
+    return res.json();
+  },
+  fetchMessages: async (conversationId: string | null) => {
+    const res = await fetch(`/fetchMessages/${conversationId}`, {
+      method: "GET",
+      headers: { Authorization: `Bearer ${localStorage.getItem(TOKEN_KEY)}` },
+    })
+    return res.json();
+  }
 };
