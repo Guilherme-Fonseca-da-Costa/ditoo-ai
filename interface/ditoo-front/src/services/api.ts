@@ -58,11 +58,18 @@ export const api = {
   upload: async (file: File) => {
     const formData = new FormData();
     formData.append("file", file);
-    await fetch("/upload", {
+    const response = await fetch("/upload", {
       method: "POST",
       body: formData,
       headers: { Authorization: `Bearer ${localStorage.getItem(TOKEN_KEY)}` },
     });
+
+
+    if (!response.ok) {
+      throw new Error(`Falha no upload: ${response.status}`);
+    }
+
+    return await response.json();
   },
   changeModel: async (model: string) => {
     console.log(model);

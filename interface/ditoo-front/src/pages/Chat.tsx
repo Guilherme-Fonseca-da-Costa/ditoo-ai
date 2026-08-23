@@ -11,6 +11,7 @@ import {
 } from "../context/ThemeContext";
 import Config from "../pages/Config";
 import { api } from "../services/api";
+import Alert from "../components/Alert";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -465,7 +466,7 @@ function AppearancePanel({ onClose }: { onClose: () => void }) {
 
 // painel de upload
 
-function UploadPanel({ onClose }: { onClose: () => void }) {
+function UploadPanel({ onClose, onUploadSuccess }: { onClose: () => void; onUploadSuccess: (message: string) => void }) {
   const [files, setFiles] = useState<File[]>([]);
   const [over, setOver] = useState(false);
   console.log(over);
@@ -477,9 +478,10 @@ function UploadPanel({ onClose }: { onClose: () => void }) {
 
   async function handleSendFiles(files: File[]) {
     for (const file of files) {
-      await api.upload(file);
-      console.log("Enviando:", files);
-    }
+      await api.upload(file).then((res) => {
+        console.log("Arquivo enviado:", res);
+        onUploadSuccess(`Arquivo ${file.name} enviado com sucesso!`);
+      });  }
     console.log("Enviando:", files);
   }
 
@@ -635,6 +637,8 @@ export default function Chat() {
       window.matchMedia("(max-width: 900px)").matches,
   );
 
+  const [showAlert, setShowAlert] = useState(false);
+  const [alertMessage, setAlertMessage] = useState("");
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -1299,7 +1303,11 @@ export default function Chat() {
           {!(isMobileViewport && (sidebarOpen || rightOpen)) && (
             <div className="input-area">
               {showUpload && (
-                <UploadPanel onClose={() => setShowUpload(false)} />
+                <UploadPanel onClose={() => setShowUpload(false)} onUploadSuccess={(message) => {
+                  setAlertMessage(message);
+                  setShowAlert(true);
+                  setTimeout(() => setShowAlert(false), 3000);
+                }} />
               )}
 
               <div className="input-wrap">
@@ -1358,7 +1366,7 @@ export default function Chat() {
           </div>
         </aside>
       </div>
+      {showAlert && <Alert text={alertMessage}></Alert>}
     </div>
-    
   );
 }

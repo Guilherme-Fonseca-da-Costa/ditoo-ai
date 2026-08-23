@@ -1011,20 +1011,40 @@ body {
   border-top: 0.5px solid var(--border);
 }
 
-.alert{
+.alert {
   position: absolute;
   left: 30px;
   bottom: 30px;
   display: flex;
-  color: white;
   align-items: center;
-  justify-content: center;
   gap: 10px;
-  padding: 10px;
-  background-color: #d8084d;
-  border-radius: 15px;
-  border: 1.5px solid var(--border);;
+  padding: 10px 16px;
+  background: var(--surface);
+  border: 0.5px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
   animation: alert 3.3s ease;
+  z-index: 50;
+}
+
+.alert h4 {
+  margin: 0;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.alert svg {
+  flex-shrink: 0;
+}
+
+.alert-success svg { color: var(--accent); }
+.alert-error svg { color: #e24b4a; }
+.alert-info svg { color: var(--muted); }
+
+.alert-error {
+  border-color: color-mix(in srgb, #e24b4a 35%, transparent);
 }
 
 @keyframes alert {
@@ -1032,7 +1052,7 @@ body {
     opacity: 0;
     transform: translateY(-4px);
   }
-  50% {
+  10%, 90% {
     opacity: 1;
     transform: translateY(0);
   }
@@ -1041,7 +1061,6 @@ body {
     transform: translateY(0);
   }
 }
-
 
 /* ─── Página do erro 404 ─────────────────────────────────── */
 .not-found-page {

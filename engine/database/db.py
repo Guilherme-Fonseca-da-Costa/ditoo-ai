@@ -44,6 +44,7 @@ class ConfigAdmin(Base):
     __tablename__ = 'system_config'
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()), index=True)
     parallelRequestNum = Column(Integer)
+    memoryLimit = Column(Integer)
     loadedModels = Column(Integer)
     activatedModels = Column(String)
     folders = Column(String)

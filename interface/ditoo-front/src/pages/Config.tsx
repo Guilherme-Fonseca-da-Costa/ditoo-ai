@@ -18,6 +18,24 @@ type AppUser = {
 // ─── Icons ─────────────────────────
 
 const Icons = {
+  Memory: () => (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      width="15"
+      height="15"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="2"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      
+    >
+      <ellipse cx="12" cy="5" rx="9" ry="3" />
+      <path d="M3 5V19A9 3 0 0 0 21 19V5" />
+      <path d="M3 12A9 3 0 0 0 21 12" />
+    </svg>
+  ),
   User: () => (
     <svg
       width="15"
@@ -484,7 +502,7 @@ function SystemSettings() {
           <button
             onClick={() => {
               console.log("Model changed:", model);
-              api.changeModel(model)
+              api.changeModel(model);
             }}
             style={{ width: 115 }}
             className="cfg-btn-primary"
@@ -677,10 +695,154 @@ function SystemSettings() {
   );
 }
 
-type Tab = "user" | "system";
+function MemorySettings() {
+  const { theme, accent, toggleTheme, setAccent } = useTheme();
+  const [displayName, setDisplayName] = useState("John Doe");
+  const [editingName, setEditingName] = useState(false);
+  const [sounds, setSounds] = useState(true);
+  const [savedBadge, setSavedBadge] = useState(false);
+
+  function saveName() {
+    setEditingName(false);
+    setSavedBadge(true);
+    setTimeout(() => setSavedBadge(false), 2000);
+  }
+
+  return (
+    <div className="cfg-content">
+      {/* ── Perfil ── */}
+      <SectionHeader
+        title="Perfil"
+        desc="Suas informações pessoais dentro do Ditoo."
+      />
+      <div className="cfg-card">
+        <SettingRow
+          label="Nome de exibição"
+          hint="Como o Ditoo se refere a você"
+        >
+          {editingName ? (
+            <div className="cfg-input-row">
+              <input
+                className="cfg-input"
+                value={displayName}
+                onChange={(e) => setDisplayName(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && saveName()}
+                autoFocus
+              />
+              <button className="cfg-btn-primary" onClick={saveName}>
+                Salvar
+              </button>
+              <button
+                className="cfg-btn-ghost"
+                onClick={() => setEditingName(false)}
+              >
+                Cancelar
+              </button>
+            </div>
+          ) : (
+            <div className="cfg-input-row">
+              <span className="cfg-value-text">{displayName}</span>
+              <button
+                className="cfg-btn-ghost"
+                onClick={() => setEditingName(true)}
+              >
+                <Icons.Edit /> Editar
+              </button>
+              {savedBadge && (
+                <span className="cfg-saved-badge">
+                  <Icons.Check /> Salvo
+                </span>
+              )}
+            </div>
+          )}
+        </SettingRow>
+      </div>
+
+      {/* ── Aparência ── */}
+      <SectionHeader
+        title="Aparência"
+        desc="Deixe o visual do Ditoo mais a sua cara."
+      />
+      <div className="cfg-card">
+        <SettingRow label="Tema" hint="Cor principal">
+          <div className="cfg-theme-toggle">
+            <button
+              className={`cfg-theme-opt ${theme === "light" ? "active" : ""}`}
+              onClick={() => theme === "dark" && toggleTheme()}
+            >
+              <Icons.Sun /> Claro
+            </button>
+            <button
+              className={`cfg-theme-opt ${theme === "dark" ? "active" : ""}`}
+              onClick={() => theme === "light" && toggleTheme()}
+            >
+              <Icons.Moon /> Escuro
+            </button>
+          </div>
+        </SettingRow>
+        <div className="cfg-divider" />
+        <SettingRow
+          label="Cor de destaque"
+          hint="Botões, links e elementos ativos"
+        >
+          <div className="cfg-accents">
+            {(
+              Object.entries(ACCENT_COLORS) as [
+                AccentColor,
+                { hex: string; label: string },
+              ][]
+            ).map(([key, { hex, label }]) => (
+              <button
+                key={key}
+                className={`cfg-accent-dot ${accent === key ? "active" : ""}`}
+                style={{ background: hex }}
+                title={label}
+                onClick={() => setAccent(key)}
+              >
+                {accent === key && <Icons.Check />}
+              </button>
+            ))}
+          </div>
+        </SettingRow>
+      </div>
+
+      {/* ── Preferências ── */}
+      <SectionHeader title="Preferências" />
+      <div className="cfg-card">
+        <SettingRow
+          label="Sons de interface"
+          hint="Silencie ou ative os sons da interface"
+        >
+          <Toggle on={sounds} onToggle={() => setSounds((v) => !v)} />
+        </SettingRow>
+      </div>
+
+      {/* ── Segurança ── */}
+      <SectionHeader title="Segurança" desc="Altere sua senha de acesso." />
+      <div className="cfg-card">
+        <SettingRow label="Nova senha" hint="Mínimo 8 caracteres">
+          <input type="password" className="cfg-input" placeholder="••••••••" />
+        </SettingRow>
+        <div className="cfg-divider" />
+        <SettingRow label="Confirmar nova senha">
+          <input type="password" className="cfg-input" placeholder="••••••••" />
+        </SettingRow>
+        <div className="cfg-row-action">
+          <button className="cfg-btn-primary">
+            <Icons.Lock /> Alterar senha
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+type Tab = "user" | "system" | "memory";
 
 export default function Config() {
   const [tab, setTab] = useState<Tab>("user");
+  const [showApplyButton, setShowApplyButton] = useState(false);
+  useEffect(() => {setShowApplyButton(true)});
 
   return (
     <div className="cfg-shell">
@@ -710,12 +872,35 @@ export default function Config() {
             <span className="cfg-nav-lock"></span>
           )}
         </button>
+        <button
+          className={`cfg-nav-item ${tab === "memory" ? "active" : ""} ${api.getToken()?.role !== "admin" ? "disabled" : ""}`}
+          onClick={() => api.getToken()?.role === "admin" && setTab("memory")}
+          disabled={api.getToken()?.role !== "admin"}
+        >
+          <Icons.Memory /> Memória
+          {api.getToken()?.role === "admin" && (
+            <span className="cfg-nav-lock"></span>
+          )}
+        </button>
       </nav>
 
       <div className="cfg-body">
         {tab === "user" && <UserSettings />}
         {tab === "system" && <SystemSettings />}
+        {tab === "memory" && <MemorySettings />}
       </div>
+       {showApplyButton && (
+        <button
+          onClick={() => {
+            setShowApplyButton(false);
+            console.log("Alterações aplicadas!");
+          }}
+          style={{ width: 132, position: "relative", top: 500, right: 665, marginLeft: "-115px", height: 40 }}
+          className="cfg-btn-primary"
+        >
+          Aplicar alterações
+        </button>
+      )}
     </div>
   );
 }

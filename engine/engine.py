@@ -134,7 +134,8 @@ class Ask(BaseModel):
 client = chromadb.PersistentClient(path=VENV_PATH)
 collection = client.get_or_create_collection(
     name="meus_documentos",
-    embedding_function=embedding
+    embedding_function=embedding,
+    metadata={"hnsw:space": "cosine"}
 )
 
 
@@ -450,7 +451,7 @@ async def answer(request_data: Ask, user=Depends(current_user)):
     for i, meta in enumerate(results['metadatas'][0]):
         archive = meta["fonte"]
         distance = results['distances'][0][i]
-        slm = 1 / (1 + distance)
+        slm = 1 - distance
         if slm > rawScores.get(archive, 0):
             rawScores[archive] = slm
 
@@ -458,36 +459,24 @@ async def answer(request_data: Ask, user=Depends(current_user)):
     print(f"DEBUG: Distância do resultado mais relevante: {bestDistance}")
     print(f"Distâncias: {results['distances']}")
 
-    # conta chunks reais de cada arquivo no índice completo
-    all_metas = collection.get(include=["metadatas"])["metadatas"]
-    chunk_counts = {}
-    for meta in all_metas:
-        fonte = meta["fonte"]
-        chunk_counts[fonte] = chunk_counts.get(fonte, 0) + 1
-
     if results['metadatas'] and results['metadatas'][0]:
         for i, meta in enumerate(results['metadatas'][0]):
             archive = meta["fonte"]
             distances = results['distances'][0][i]
-            slm = 1 / (1 + distances)
+            slm = 1 - distances
             if slm > smlFonts.get(archive, 0):
                 smlFonts[archive] = slm
 
-        # penaliza pelo tamanho real do arquivo
-        for arquivo in smlFonts:
-            total_chunks = chunk_counts.get(arquivo, 1)
-            smlFonts[arquivo] = smlFonts[arquivo] / (1 + 0.01 * total_chunks)
-
     fonts = [meta['fonte'] for meta in results["metadatas"][0]]
     print(f"DEBUG: Similaridade por fonte: {smlFonts}")
-    print(f"DEBUG: Chunks reais por arquivo: {chunk_counts}")
+
+    MIN_GAP = 0.15
+    max_fonts = 3
 
     if not smlFonts:
-    # nenhum documento relevante encontrado (base vazia ou sem match)
         winnerFonts = []
         percents = {}
         contexto = "Nenhum documento disponível na base de conhecimento."
-
     else:
         winnerFont = max(smlFonts, key=smlFonts.get)
         max_score = smlFonts[winnerFont]
@@ -496,17 +485,14 @@ async def answer(request_data: Ask, user=Depends(current_user)):
             fonte for fonte, score in smlFonts.items()
             if max_score - score <= MIN_GAP
         ]
-        print(f"DEBUG: Fontes vencedoras ({MIN_GAP}): {winnerFonts}")
-
-        best_raw = max(rawScores[f] for f in winnerFonts)
-        winnerFonts = sorted(winnerFonts, key=lambda f: smlFonts[f], reverse=True)
+        winnerFonts = sorted(winnerFonts, key=lambda f: smlFonts[f], reverse=True)[:max_fonts]  # corta aqui, já elimina o bug do 97%
 
         percents = {
-            fonte: round((rawScores[fonte] / best_raw) * 100)
+            fonte: round(smlFonts[fonte] * 100)   # usa a MESMA métrica (smlFonts), não mais rawScores separado
             for fonte in winnerFonts
         }
+        print(f"DEBUG: Fontes vencedoras ({MIN_GAP}): {winnerFonts}")
         print(f"DEBUG: Percentuais por fonte: {percents}")
-    
 
     if results['documents'] and results['documents'][0]:
         fonte_para_chunks = {}
@@ -515,7 +501,7 @@ async def answer(request_data: Ask, user=Depends(current_user)):
             texto = results['documents'][0][i]
             fonte_para_chunks.setdefault(fonte, []).append(texto)
 
-        for fonte in winnerFonts[:max_fonts]:
+        for fonte in winnerFonts:   # sem [:max_fonts] de novo, já foi cortado acima
             chunks = fonte_para_chunks.get(fonte, [])
             textos = "\n---\n".join(chunks)
             context_parts.append(f"### {fonte}\n{textos}")
@@ -551,6 +537,12 @@ Você recebe abaixo um CONTEXTO extraído de documentos internos, relevante (ou 
 - Se a mensagem não tiver relação com o contexto (perguntas sociais, de esclarecimento sobre a própria conversa, ou fora do escopo dos documentos), ignore o contexto completamente e responda apenas com base na conversa e no seu conhecimento geral, deixando claro quando a resposta não vem dos documentos da empresa.
 - Só diga que não encontrou a informação se não houver absolutamente nenhuma pista no contexto relacionada à pergunta.
 - Nunca cite nomes de arquivo ou metadados de forma mecânica dentro do texto (ex: "de acordo com relatorio.pdf") — as fontes já são exibidas separadamente na interface.
+
+Você recebe o histórico de mensagens anteriores desta conversa, mas cada nova mensagem do usuário deve ser respondida com foco apenas no que ela pede agora.
+
+- NUNCA repita, resuma ou reintroduza respostas de perguntas anteriores, a menos que a mensagem atual peça explicitamente para retomar, comparar ou continuar aquele assunto.
+- Use o histórico apenas para entender referências implícitas (ex: "esse arquivo", "a pessoa que mencionei", "aquilo que você disse antes") — não para "completar" a resposta atual com informações de perguntas antigas.
+- Se a pergunta atual não tem relação nenhuma com as anteriores, responda como se fosse uma pergunta nova e isolada, sem qualquer menção ao que foi discutido antes.
 
 ## Idioma
 
