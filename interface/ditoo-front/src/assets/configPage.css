@@ -756,3 +756,60 @@
     padding: 0 12px;
   }
 }
+
+.cfg-memory-list {
+  display: flex;
+  overflow: auto;
+  flex-direction: column;
+  height: 250px;
+}
+
+.cfg-memory-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-bottom: 0.5px solid var(--border);
+  transition: background var(--transition);
+}
+
+.cfg-memory-item:last-child {
+  border-bottom: none;
+}
+
+.cfg-memory-item:hover {
+  background: var(--surface2);
+}
+
+.cfg-memory-icon {
+  width: 30px;
+  height: 30px;
+  border-radius: var(--radius-sm);
+  background: var(--accent-soft);
+  color: var(--accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.cfg-memory-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.cfg-memory-content {
+  font-size: 13px;
+  color: var(--text);
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+.cfg-memory-category {
+  font-size: 11px;
+  color: var(--muted);
+  text-transform: capitalize;
+}

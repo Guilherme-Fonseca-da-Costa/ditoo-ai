@@ -93,5 +93,43 @@ export const api = {
       headers: { Authorization: `Bearer ${localStorage.getItem(TOKEN_KEY)}` },
     })
     return res.json();
-  }
+  },
+  async getConfig() {
+  const res = await fetch("/getConfig", {
+    headers: { Authorization: `Bearer ${localStorage.getItem(TOKEN_KEY)}` },
+  });
+  if (!res.ok) throw new Error("Erro ao buscar configuração");
+  return res.json();
+},
+
+async updateConfig(patch: Record<string, unknown>) {
+  const res = await fetch("/updateConfig", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${localStorage.getItem(TOKEN_KEY)}`,
+    },
+    body: JSON.stringify(patch),
+  });
+  if (!res.ok) throw new Error("Erro ao salvar configuração");
+  return res.json();
+}
+
+,async getUserMemories() {
+  const res = await fetch("/getUserMemories", {
+    method: "GET",
+    headers: { Authorization: `Bearer ${localStorage.getItem(TOKEN_KEY)}` },
+  });
+  if (!res.ok) throw new Error("Erro ao buscar memórias");
+  return res.json();
+}
+
+,async deleteMemory(id: string) {
+  const res = await fetch(`/deleteMemory/${id}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${localStorage.getItem(TOKEN_KEY)}` },
+  });
+  if (!res.ok) throw new Error("Erro ao remover memória");
+  return res.json();
+}
 };

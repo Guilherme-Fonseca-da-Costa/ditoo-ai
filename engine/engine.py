@@ -1,4 +1,5 @@
-from database.db import Conversation, Message, SessionLocal, User, engine
+from database.db import Conversation, Message, SessionLocal, User, UserMemory, engine
+import re
 import os
 import sys
 import subprocess
@@ -82,6 +83,38 @@ DOCS_PATH = os.path.join(BASE_PATH, "documentos")
 VENV_PATH = os.path.join(BASE_PATH, "vetores_db")
 ENV_PATH = os.path.join(BASE_PATH, ".env")
 MODEL = "qwen2.5:7b"
+
+MEMORY_TRIGGERS = [
+    
+    r"(?:a partir de agora,? )?lembr[ea]-?se (?:tamb[ée]m )?(?:sempre )?(?:que|de) (?P<content>.+)",
+    r"(?:a partir de agora,? )?lembr[ea] (?:tamb[ée]m )?(?:sempre )?(?:que|de) (?P<content>.+)",
+    r"se lembr[ea] (?:tamb[ée]m )?(?:que|de) (?P<content>.+)",
+    r"quero que voc[êe] (?:se )?lembr[ea] (?:tamb[ée]m )?(?:que|de) (?P<content>.+)",
+    r"preciso que voc[êe] (?:se )?lembr[ea] (?:tamb[ée]m )?(?:que|de) (?P<content>.+)",
+    r"guard[ae] (?:tamb[ée]m )?(?:isso )?n[ao] mem[óo]ria:?(?: que)? (?P<content>.+)",
+    r"guard[ae] (?:tamb[ée]m )?(?:que|isso:?) (?P<content>.+)",
+    r"anot[ae] (?:a[íi] )?(?:tamb[ée]m )?(?:que|isso:?) (?P<content>.+)",
+    r"n[ãa]o (?:vai |v[áa] )?esque[çc](?:a|er) (?:tamb[ée]m )?(?:que|de) (?P<content>.+)",
+    r"nunca esque[çc]a (?:que|de) (?P<content>.+)",    
+    r"salv[ae] (?:tamb[ée]m )?(?:isso )?n[ãa] mem[óo]ria:?(?: que)? (?P<content>.+)",   
+    r"grav[ae] (?:tamb[ée]m )?(?:que|isso:?) (?P<content>.+)",    
+    r"memoriz[ae] (?:que|isso:?) (?P<content>.+)",    
+    r"regist(?:re|ra) (?:tamb[ée]m )?(?:que|isso:?) (?P<content>.+)",    
+    r"tom[ae] nota (?:de )?(?:que )?(?P<content>.+)",    
+    r"fix[ae] (?:isso )?n[ãa] mem[óo]ria:?(?: que)? (?P<content>.+)",
+]
+
+def detect_memory_request(text: str) -> str | None:
+    """Retorna o conteúdo a ser lembrado, ou None se não houver gatilho."""
+    for pattern in MEMORY_TRIGGERS:
+        match = re.search(pattern, text, re.IGNORECASE)
+        if match:
+            content = match.group("content").strip()
+            # remove pontuação final solta
+            content = content.rstrip(".!?")
+            if content:
+                return content
+    return None
 
 #Modelos:
 
@@ -287,7 +320,64 @@ def current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
     except JWTError:
         raise HTTPException(status_code=401, detail="Invalid token")
     
-#API de autenticação para registro e login de usuários, protegendo o endpoint de perguntas para usuários autenticados
+@app.post("/insertUserMemory")
+def insert_user_memory(memory: dict, user=Depends(current_user)):
+    db = SessionLocal()
+    try:
+        db_user = db.query(User).filter_by(email=user).first()
+        if not db_user:
+            raise HTTPException(status_code=404, detail="Usuário não encontrado")
+
+        new_memory = UserMemory(
+            user_id=db_user.id,
+            memory_key=memory.get("memory_key"),
+            memory_value=memory.get("memory_value")
+        )
+        db.add(new_memory)
+        db.commit()
+        return {"message": "Memória do usuário inserida com sucesso!"}
+    finally:
+        db.close()
+
+@app.post("/removeUserMemory")
+def remove_user_memory(memory: dict, user=Depends(current_user)):
+    db = SessionLocal()
+    try:
+        db_user = db.query(User).filter_by(email=user).first()
+        if not db_user:
+            raise HTTPException(status_code=404, detail="Usuário não encontrado")
+
+        new_memory = UserMemory(
+            user_id=db_user.id,
+            memory_key=memory.get("memory_key"),
+            memory_value=memory.get("memory_value")
+        )
+        db.delete(new_memory)
+        db.commit()
+        return {"message": "Memória do usuário removida com sucesso!"}
+    finally:
+        db.close()
+
+@app.get("/getUserMemories")
+def get_user_memories(user=Depends(current_user)):
+    db = SessionLocal()
+    try:
+        db_user = db.query(User).filter_by(email=user).first()
+        if not db_user:
+            raise HTTPException(status_code=404, detail="Usuário não encontrado")
+
+        memories = (
+            db.query(UserMemory)
+            .filter_by(user_id=db_user.id)
+            .all()
+        )
+
+        return [
+            {"memory_key": m.id, "memory_value": m.content}
+            for m in memories
+        ]
+    finally:
+        db.close()
 
 @app.post("/changeModel")
 def changeModel(model: Model):
@@ -431,6 +521,11 @@ async def answer(request_data: Ask, user=Depends(current_user)):
     db.add(Message(conversation_id=conversation.id, role="user", content=request_data.texto))
     db.commit()
 
+    memory_content = detect_memory_request(request_data.texto)
+    if memory_content:
+        db.add(UserMemory(user_id=db_user.id, content=memory_content))
+        db.commit()
+        print(f"DEBUG: Memória salva: {memory_content}")
    
 
     percentResult = 0
@@ -513,8 +608,19 @@ async def answer(request_data: Ask, user=Depends(current_user)):
         contexto = "Nenhum contexto encontrado."
         print(f"DEBUG: Sem Contexto construído com {contexto}.")
 
+    user_memories = db.query(UserMemory).filter_by(user_id=db_user.id).all()
+    memoria_permanente = ""
+    if user_memories:
+        fatos = "\n".join(f"- {m.content}" for m in user_memories)
+        memoria_permanente = f"""
+    O que você sabe permanentemente sobre este usuário (sempre válido, independente da conversa):
+    {fatos}
+    """
+
     prompt_sistema = f"""
     Você é o Ditoo, um assistente de IA interno da empresa, especializado em ajudar pessoas a encontrar e entender informações nos documentos da organização.
+
+    {memoria_permanente}
 
 ## Como se comunicar
 
@@ -567,6 +673,23 @@ Responda sempre em Português do Brasil, em tom profissional mas acessível — 
         print(f"DEBUG: Memória: {memory}")
         print(f"DEBUG: Histórico de mensagens: {messages}")
         yield json.dumps({"type": "id", "id": id_resposta, "conversationId": conversation.id}) + "\n"
+
+        if memory_content:
+            yield json.dumps({
+                "type": "memory_saved",
+                "content": memory_content,
+            }) + "\n"
+
+        loop = asyncio.get_event_loop()
+        stream = await loop.run_in_executor(
+            None,  # usa thread pool padrão
+            lambda: ollama.chat(
+                model=MODEL,
+                messages=messages,
+                stream=True,
+                keep_alive=-1
+            )
+        )
 
         loop = asyncio.get_event_loop()
         stream = await loop.run_in_executor(

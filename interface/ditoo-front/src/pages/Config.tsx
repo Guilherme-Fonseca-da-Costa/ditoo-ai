@@ -696,142 +696,125 @@ function SystemSettings() {
 }
 
 function MemorySettings() {
-  const { theme, accent, toggleTheme, setAccent } = useTheme();
-  const [displayName, setDisplayName] = useState("John Doe");
-  const [editingName, setEditingName] = useState(false);
-  const [sounds, setSounds] = useState(true);
+  const [maxHistory, setMaxHistory] = useState(15);
+  const [memories, setMemories] = useState<
+    { memory_key: string; memory_value: string; category: string }[]
+  >([]);
+  const [loadingMemories, setLoadingMemories] = useState(true);
   const [savedBadge, setSavedBadge] = useState(false);
 
-  function saveName() {
-    setEditingName(false);
-    setSavedBadge(true);
-    setTimeout(() => setSavedBadge(false), 2000);
+ useEffect(() => {
+  async function loadData() {
+    try {
+      const [mems] = await Promise.all([
+        
+        api.getUserMemories(),
+      ]);
+      
+      setMemories(mems);
+    } catch (err) {
+      console.error("Erro ao carregar dados de memória:", err);
+    } finally {
+      setLoadingMemories(false);
+    }
+  }
+  loadData();
+}, []);
+
+  async function saveMaxHistory(value: number) {
+    setMaxHistory(value);
+    try {
+      await api.updateConfig({ maxHistoryMessages: value });
+      setSavedBadge(true);
+      setTimeout(() => setSavedBadge(false), 2000);
+    } catch (err) {
+      console.error("Erro ao salvar configuração:", err);
+    }
+  }
+
+  async function removeMemory(id: string) {
+    setMemories((prev) => prev.filter((m) => m.memory_key !== id));
+    try {
+      await api.deleteMemory(id);
+    } catch (err) {
+      console.error("Erro ao remover memória:", err);
+    }
   }
 
   return (
     <div className="cfg-content">
-      {/* ── Perfil ── */}
+      {/* ── Histórico de conversas ── */}
       <SectionHeader
-        title="Perfil"
-        desc="Suas informações pessoais dentro do Ditoo."
+        title="Histórico de conversas"
+        desc="Quantas mensagens recentes o Ditoo considera ao responder dentro de uma conversa."
       />
       <div className="cfg-card">
         <SettingRow
-          label="Nome de exibição"
-          hint="Como o Ditoo se refere a você"
+          label="Mensagens de contexto"
+          hint="Quanto maior, mais o Ditoo lembra da conversa atual — mas aumenta o custo de cada resposta."
         >
-          {editingName ? (
-            <div className="cfg-input-row">
-              <input
-                className="cfg-input"
-                value={displayName}
-                onChange={(e) => setDisplayName(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && saveName()}
-                autoFocus
-              />
-              <button className="cfg-btn-primary" onClick={saveName}>
-                Salvar
-              </button>
-              <button
-                className="cfg-btn-ghost"
-                onClick={() => setEditingName(false)}
-              >
-                Cancelar
-              </button>
-            </div>
-          ) : (
-            <div className="cfg-input-row">
-              <span className="cfg-value-text">{displayName}</span>
-              <button
-                className="cfg-btn-ghost"
-                onClick={() => setEditingName(true)}
-              >
-                <Icons.Edit /> Editar
-              </button>
-              {savedBadge && (
-                <span className="cfg-saved-badge">
-                  <Icons.Check /> Salvo
-                </span>
-              )}
-            </div>
-          )}
-        </SettingRow>
-      </div>
-
-      {/* ── Aparência ── */}
-      <SectionHeader
-        title="Aparência"
-        desc="Deixe o visual do Ditoo mais a sua cara."
-      />
-      <div className="cfg-card">
-        <SettingRow label="Tema" hint="Cor principal">
-          <div className="cfg-theme-toggle">
+          <div className="cfg-number-control">
             <button
-              className={`cfg-theme-opt ${theme === "light" ? "active" : ""}`}
-              onClick={() => theme === "dark" && toggleTheme()}
+              className="cfg-number-btn"
+              onClick={() => saveMaxHistory(Math.max(5, maxHistory - 5))}
+              disabled={maxHistory <= 5}
             >
-              <Icons.Sun /> Claro
+              −
             </button>
+            <span className="cfg-number-value">{maxHistory}</span>
             <button
-              className={`cfg-theme-opt ${theme === "dark" ? "active" : ""}`}
-              onClick={() => theme === "light" && toggleTheme()}
+              className="cfg-number-btn"
+              onClick={() => saveMaxHistory(Math.min(100, maxHistory + 5))}
+              disabled={maxHistory >= 100}
             >
-              <Icons.Moon /> Escuro
+              +
             </button>
           </div>
         </SettingRow>
-        <div className="cfg-divider" />
-        <SettingRow
-          label="Cor de destaque"
-          hint="Botões, links e elementos ativos"
-        >
-          <div className="cfg-accents">
-            {(
-              Object.entries(ACCENT_COLORS) as [
-                AccentColor,
-                { hex: string; label: string },
-              ][]
-            ).map(([key, { hex, label }]) => (
-              <button
-                key={key}
-                className={`cfg-accent-dot ${accent === key ? "active" : ""}`}
-                style={{ background: hex }}
-                title={label}
-                onClick={() => setAccent(key)}
-              >
-                {accent === key && <Icons.Check />}
-              </button>
+        {savedBadge && (
+          <span className="cfg-saved-badge" style={{ margin: "0 14px 12px" }}>
+            <Icons.Check /> Salvo
+          </span>
+        )}
+      </div>
+
+      {/* ── Memórias permanentes ── */}
+      <SectionHeader
+        title="O que o Ditoo lembra de você"
+        desc="Fatos que você pediu para o Ditoo guardar permanentemente. Eles valem em qualquer conversa, mesmo além do limite de mensagens acima."
+      />
+      <div className="cfg-card">
+        {loadingMemories ? (
+          <p className="cfg-empty-msg">Carregando memórias...</p>
+        ) : memories.length === 0 ? (
+          <p className="cfg-empty-msg">
+            Nenhuma memória permanente ainda. Peça ao Ditoo para "lembrar de
+            algo" durante uma conversa.
+          </p>
+        ) : (
+          <div className="cfg-memory-list">
+            {memories.map((m) => (
+              <div key={m.memory_key} className="cfg-memory-item">
+                <div className="cfg-memory-icon">
+                  <Icons.Memory />
+                </div>
+                <div className="cfg-memory-info">
+                  <span className="cfg-memory-content">{m.memory_value}</span>
+                  <span className="cfg-memory-category font-mono">
+                    {m.category}
+                  </span>
+                </div>
+                <button
+                  className="cfg-icon-btn danger"
+                  title="Esquecer"
+                  onClick={() => removeMemory(m.memory_key)}
+                >
+                  <Icons.Trash />
+                </button>
+              </div>
             ))}
           </div>
-        </SettingRow>
-      </div>
-
-      {/* ── Preferências ── */}
-      <SectionHeader title="Preferências" />
-      <div className="cfg-card">
-        <SettingRow
-          label="Sons de interface"
-          hint="Silencie ou ative os sons da interface"
-        >
-          <Toggle on={sounds} onToggle={() => setSounds((v) => !v)} />
-        </SettingRow>
-      </div>
-
-      {/* ── Segurança ── */}
-      <SectionHeader title="Segurança" desc="Altere sua senha de acesso." />
-      <div className="cfg-card">
-        <SettingRow label="Nova senha" hint="Mínimo 8 caracteres">
-          <input type="password" className="cfg-input" placeholder="••••••••" />
-        </SettingRow>
-        <div className="cfg-divider" />
-        <SettingRow label="Confirmar nova senha">
-          <input type="password" className="cfg-input" placeholder="••••••••" />
-        </SettingRow>
-        <div className="cfg-row-action">
-          <button className="cfg-btn-primary">
-            <Icons.Lock /> Alterar senha
-          </button>
-        </div>
+        )}
       </div>
     </div>
   );
@@ -895,7 +878,7 @@ export default function Config() {
             setShowApplyButton(false);
             console.log("Alterações aplicadas!");
           }}
-          style={{ width: 132, position: "relative", top: 500, right: 665, marginLeft: "-115px", height: 40 }}
+          style={{ width: 132, position: "relative", top: 500, right: 665, marginLeft: "-132px", height: 40 }}
           className="cfg-btn-primary"
         >
           Aplicar alterações

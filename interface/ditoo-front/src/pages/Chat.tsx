@@ -637,8 +637,22 @@ export default function Chat() {
       window.matchMedia("(max-width: 900px)").matches,
   );
 
-  const [showAlert, setShowAlert] = useState(false);
-  const [alertMessage, setAlertMessage] = useState("");
+interface AlertItem {
+  id: number;
+  text: string;
+  type?: "success" | "error" | "info";
+}
+
+const [alerts, setAlerts] = useState<AlertItem[]>([]);
+
+function pushAlert(text: string, type: AlertItem["type"] = "success") {
+  const id = Date.now() + Math.random(); // garante id único mesmo se dois alertas chegarem no mesmo milissegundo
+  setAlerts((prev) => [...prev, { id, text, type }]);
+}
+
+function removeAlert(id: number) {
+  setAlerts((prev) => prev.filter((a) => a.id !== id));
+}
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -800,6 +814,10 @@ export default function Chat() {
                   );
                 }
               }
+            }
+
+            if (data.type === "memory_saved") {
+              pushAlert("Ditoo se lembrará dessa informação...", "success");
             }
 
             if (data.type === "content") {
@@ -1304,9 +1322,7 @@ export default function Chat() {
             <div className="input-area">
               {showUpload && (
                 <UploadPanel onClose={() => setShowUpload(false)} onUploadSuccess={(message) => {
-                  setAlertMessage(message);
-                  setShowAlert(true);
-                  setTimeout(() => setShowAlert(false), 3000);
+                  pushAlert(message)
                 }} />
               )}
 
@@ -1342,6 +1358,7 @@ export default function Chat() {
                   <Icon.Send /> <span>Enviar</span>
                 </button>
               </div>
+              <p style={{ marginBottom: -33, fontSize: 13, color: "gray", justifySelf: "center", paddingTop: 5 }}  className="chat-input">Ditoo é uma IA e pode cometer erros. Por favor, verifique as respostas.</p>
             </div>
           )}
         </main>
@@ -1366,7 +1383,16 @@ export default function Chat() {
           </div>
         </aside>
       </div>
-      {showAlert && <Alert text={alertMessage}></Alert>}
+      <div className="alert-stack">
+  {alerts.map((a) => (
+    <Alert
+      key={a.id}
+      text={a.text}
+      type={a.type}
+      onClose={() => removeAlert(a.id)}
+    />
+  ))}
+</div>
     </div>
   );
 }
