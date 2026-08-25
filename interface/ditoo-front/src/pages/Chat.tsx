@@ -735,166 +735,179 @@ function removeAlert(id: number) {
 
   // ─── enviar mensagem ──────────────────────────────────────────────────────────
 
-  async function handleSend() {
-    const text = input.trim();
-    if (!text || loading) return;
+async function sendMessage(text: string) {
+  if (!text || loading) return;
 
-    const userMsg: Message = { id: Date.now(), sender: "user", text };
-    const updatedMessages = [...messages, userMsg];
-    setMessages(updatedMessages);
-    setInput("");
-    setLoading(true);
-    setAiMsgId(null);
+  const userMsg: Message = { id: Date.now(), sender: "user", text };
+  const updatedMessages = [...messages, userMsg];
+  setMessages(updatedMessages);
+  setLoading(true);
+  setAiMsgId(null);
 
-    // id temporário só para identificar a entrada no state local do histórico
-    // será substituído pelo conversationId real assim que o backend responder
-    const tempId = activeHistoryId ?? Date.now().toString();
-    const isNewConversation = activeHistoryId == null;
+  const tempId = activeHistoryId ?? Date.now().toString();
+  const isNewConversation = activeHistoryId == null;
 
-    if (isNewConversation) {
-      const newEntry: HistoryItem = {
-        id: tempId,
-        title: text.slice(0, 30) + (text.length > 30 ? "…" : ""),
-        messages: updatedMessages,
-      };
-      setHistory((prev) => [newEntry, ...prev]);
-      setActiveHistoryId(tempId);
-    } else {
-      setHistory((prev) =>
-        prev.map((h) =>
-          h.id === activeHistoryId ? { ...h, messages: updatedMessages } : h,
-        ),
-      );
-    }
+  if (isNewConversation) {
+    const newEntry: HistoryItem = {
+      id: tempId,
+      title: text.slice(0, 30) + (text.length > 30 ? "…" : ""),
+      messages: updatedMessages,
+    };
+    setHistory((prev) => [newEntry, ...prev]);
+    setActiveHistoryId(tempId);
+  } else {
+    setHistory((prev) =>
+      prev.map((h) => (h.id === activeHistoryId ? { ...h, messages: updatedMessages } : h)),
+    );
+  }
 
-    try {
-      const response = await fetch("/ask", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${localStorage.getItem(TOKEN_KEY)}`,
-        },
-        body: JSON.stringify({
-          texto: text,
-          // só manda conversationId se já tivermos um real (não o temporário local)
-          conversationId: isNewConversation ? null : activeHistoryId,
-          title: isNewConversation ? text.slice(0, 30) + (text.length > 30 ? "…" : "") : undefined,
-        }),
-      });
+  const newAiId = Date.now() + 1;
+  let lastSources: Source[] = [];
+  let firstContent = true;
+  let realConversationId: string | null = null;
 
-      if (!response.body) throw new Error("Sem corpo na resposta");
+  try {
+    const response = await fetch("/ask", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${localStorage.getItem(TOKEN_KEY)}`,
+      },
+      body: JSON.stringify({
+        texto: text,
+        conversationId: isNewConversation ? null : activeHistoryId,
+        title: isNewConversation ? text.slice(0, 30) + (text.length > 30 ? "…" : "") : undefined,
+      }),
+    });
 
-      const newAiId = Date.now() + 1;
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let lastSources: Source[] = [];
-      let firstContent = true;
-      let realConversationId: string | null = null;
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        const lines = decoder.decode(value, { stream: true }).split("\n");
-        for (const line of lines) {
-          if (!line.trim()) continue;
-          try {
-            const data = JSON.parse(line);
-
-            // recebe o conversationId real do backend
-            if (data.type === "id") {
-              if (data.conversationId) {
-                realConversationId = data.conversationId;
-                if (isNewConversation) {
-                  setActiveHistoryId(realConversationId);
-                  setHistory((prev) =>
-                    prev.map((h) =>
-                      h.id === tempId ? { ...h, id: realConversationId! } : h,
-                    ),
-                  );
-                }
-              }
-            }
-
-            if (data.type === "memory_saved") {
-              pushAlert("Ditoo se lembrará dessa informação...", "success");
-            }
-
-            if (data.type === "content") {
-              if (firstContent) {
-                firstContent = false;
-                setAiMsgId(newAiId);
-                setMessages((prev) => [
-                  ...prev,
-                  { id: newAiId, sender: "ai", text: data.text ?? "" },
-                ]);
-              } else {
-                setMessages((prev) =>
-                  prev.map((m) =>
-                    m.id === newAiId
-                      ? { ...m, text: m.text + (data.text ?? "") }
-                      : m,
-                  ),
-                );
-              }
-              if (data.winner && data.percent != null) {
-                lastSources = (data.winner as string[]).map((name) => ({
-                  name,
-                  path: `Ditoo/documentos/`,
-                  percent: data.percent[name] ?? 0,
-                }));
-              }
-            }
-          } catch {
-            // linha não é JSON válido, ignorar
-          }
+    await readNDJSONStream(response, (data) => {
+      if (data.type === "id" && data.conversationId) {
+        realConversationId = data.conversationId;
+        if (isNewConversation) {
+          setActiveHistoryId(realConversationId);
+          setHistory((prev) =>
+            prev.map((h) => (h.id === tempId ? { ...h, id: realConversationId! } : h)),
+          );
         }
       }
 
-      // atualiza fontes
-      setMessages((prev) =>
-        prev.map((m) =>
-          m.id === newAiId ? { ...m, sources: lastSources } : m,
-        ),
-      );
-      setActiveSources(lastSources);
+      if (data.type === "memory_saved") {
+        pushAlert("Ditoo se lembrará dessa informação...", "success");
+      }
 
-      // atualiza mensagens no histórico, usando o id real (se já tiver chegado) ou o temporário
-      const finalHistoryId = realConversationId ?? tempId;
-      setHistory((prev) =>
-        prev.map((h) =>
-          h.id === finalHistoryId
-            ? {
-                ...h,
-                messages: [
-                  ...updatedMessages,
-                  {
-                    id: newAiId,
-                    sender: "ai" as const,
-                    text: "",
-                    sources: lastSources,
-                  },
-                ],
-              }
-            : h,
-        ),
-      );
+      if (data.type === "content") {
+        if (firstContent) {
+          firstContent = false;
+          setAiMsgId(newAiId);
+          setMessages((prev) => [
+            ...prev,
+            { id: newAiId, sender: "ai", text: data.text ?? "" },
+          ]);
+        } else {
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === newAiId ? { ...m, text: m.text + (data.text ?? "") } : m,
+            ),
+          );
+        }
+        if (data.winner && data.percent != null) {
+          lastSources = (data.winner as string[]).map((name) => ({
+            name,
+            path: `Ditoo/documentos/`,
+            percent: data.percent[name] ?? 0,
+          }));
+        }
+      }
+    });
 
-      audioRef.current?.play().catch(() => {});
-    } catch {
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: Date.now(),
-          sender: "ai",
-          text: "Ocorreu um erro ao conectar com o servidor. Verifique se o backend está rodando.",
-        },
-      ]);
-    } finally {
-      setLoading(false);
-      setAiMsgId(null);
+    setMessages((prev) =>
+      prev.map((m) => (m.id === newAiId ? { ...m, sources: lastSources } : m)),
+    );
+    setActiveSources(lastSources);
+
+    const finalHistoryId = realConversationId ?? tempId;
+    setHistory((prev) =>
+      prev.map((h) =>
+        h.id === finalHistoryId
+          ? {
+              ...h,
+              messages: [
+                ...updatedMessages,
+                { id: newAiId, sender: "ai" as const, text: "", sources: lastSources },
+              ],
+            }
+          : h,
+      ),
+    );
+
+    audioRef.current?.play().catch(() => {});
+  } catch {
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: Date.now(),
+        sender: "ai",
+        text: "Ocorreu um erro ao conectar com o servidor. Verifique se o backend está rodando.",
+      },
+    ]);
+  } finally {
+    setLoading(false);
+    setAiMsgId(null);
+  }
+}
+
+async function handleSend() {
+  const text = input.trim();
+  if (!text || loading) return;
+  setInput("");
+  await sendMessage(text);
+}
+
+function handlePromptChip(text: string) {
+  setInput(text);
+  inputRef.current?.focus();
+  setTimeout(() => {
+    setInput("");
+    sendMessage(text);
+  }, 0);
+}
+
+  async function readNDJSONStream(
+  response: Response,
+  onEvent: (data: any) => void,
+) {
+  if (!response.body) throw new Error("Sem corpo na resposta");
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() ?? "";
+
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      try {
+        onEvent(JSON.parse(line));
+      } catch {
+        console.warn("Linha NDJSON inválida, ignorando:", line);
+      }
     }
   }
+
+  if (buffer.trim()) {
+    try {
+      onEvent(JSON.parse(buffer));
+    } catch {
+      console.warn("Fragmento final inválido:", buffer);
+    }
+  }
+}
 
   // função para rolar a conversa até a mensagem citada no histórico
   function scrollToMessage(id: number) {
@@ -912,145 +925,7 @@ function removeAlert(id: number) {
     }
   }
 
-  function handlePromptChip(text: string) {
-    setInput(text);
-    inputRef.current?.focus();
-    setTimeout(() => {
-      setInput("");
-      const userMsg: Message = { id: Date.now(), sender: "user", text };
-      const updatedMessages = [...messages, userMsg];
-      setMessages(updatedMessages);
-      setLoading(true);
-      setAiMsgId(null);
 
-      const tempId = activeHistoryId ?? Date.now().toString();
-      const isNewConversation = activeHistoryId == null;
-
-      if (isNewConversation) {
-        const newEntry: HistoryItem = {
-          id: tempId,
-          title: text.slice(0, 30) + (text.length > 30 ? "…" : ""),
-          messages: updatedMessages,
-        };
-        setHistory((prev) => [newEntry, ...prev]);
-        setActiveHistoryId(tempId);
-      } else {
-        setHistory((prev) =>
-          prev.map((h) =>
-            h.id === activeHistoryId ? { ...h, messages: updatedMessages } : h,
-          ),
-        );
-      }
-
-      fetch("/ask", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${localStorage.getItem(TOKEN_KEY)}`,
-        },
-        body: JSON.stringify({
-          texto: text,
-          conversationId: isNewConversation ? null : activeHistoryId,
-        }),
-      })
-        .then(async (response) => {
-          if (!response.body) return;
-          const newAiId = Date.now() + 1;
-          const reader = response.body.getReader();
-          const decoder = new TextDecoder();
-          let lastSources: Source[] = [];
-          let firstContent = true;
-          let realConversationId: string | null = null;
-
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            const lines = decoder.decode(value, { stream: true }).split("\n");
-            for (const line of lines) {
-              if (!line.trim()) continue;
-              try {
-                const data = JSON.parse(line);
-
-                if (data.type === "id") {
-                  if (data.conversationId) {
-                    realConversationId = data.conversationId;
-                    if (isNewConversation) {
-                      setActiveHistoryId(realConversationId);
-                      setHistory((prev) =>
-                        prev.map((h) =>
-                          h.id === tempId
-                            ? { ...h, id: realConversationId! }
-                            : h,
-                        ),
-                      );
-                    }
-                  }
-                }
-
-                if (data.type === "content") {
-                  if (firstContent) {
-                    firstContent = false;
-                    setAiMsgId(newAiId);
-                    setMessages((prev) => [
-                      ...prev,
-                      { id: newAiId, sender: "ai", text: data.text ?? "" },
-                    ]);
-                  } else {
-                    setMessages((prev) =>
-                      prev.map((m) =>
-                        m.id === newAiId
-                          ? { ...m, text: m.text + (data.text ?? "") }
-                          : m,
-                      ),
-                    );
-                  }
-                  if (data.winner && data.percent != null) {
-                    lastSources = (data.winner as string[]).map((name) => ({
-                      name,
-                      path: `Ditoo/documentos/`,
-                      percent: data.percent[name] ?? 0,
-                    }));
-                  }
-                }
-              } catch {
-                /* ignore */
-              }
-            }
-          }
-          setMessages((prev) =>
-            prev.map((m) =>
-              m.id === newAiId ? { ...m, sources: lastSources } : m,
-            ),
-          );
-          setActiveSources(lastSources);
-
-          const finalHistoryId = realConversationId ?? tempId;
-          setHistory((prev) =>
-            prev.map((h) =>
-              h.id === finalHistoryId
-                ? {
-                    ...h,
-                    messages: [
-                      ...updatedMessages,
-                      {
-                        id: newAiId,
-                        sender: "ai" as const,
-                        text: "",
-                        sources: lastSources,
-                      },
-                    ],
-                  }
-                : h,
-            ),
-          );
-        })
-        .catch(() => {})
-        .finally(() => {
-          setLoading(false);
-          setAiMsgId(null);
-        });
-    }, 0);
-  }
   function handleNewChat() {
     setMessages([]);
     setActiveSources([]);

@@ -662,7 +662,7 @@ Responda sempre em Português do Brasil, em tom profissional mas acessível — 
     id_resposta = str(uuid.uuid4())
     messages = [{'role': 'system', 'content': prompt_sistema}]
     for msg in memory:
-        role = "ai" if msg.role == "ai" else "user"
+        role = "assistant" if msg.role == "ai" else "user"
         messages.append({'role': role, 'content': msg.content})
     messages.append({'role': 'user', 'content': request_data.texto})
 
@@ -779,7 +779,7 @@ python -m PyInstaller --onefile --name ditoo-server \
   --hidden-import uvicorn.protocols \
   --hidden-import uvicorn.protocols.http.auto \
   --hidden-import uvicorn.lifespan \
-  --hidden-import uvicorn.lifespan.on \
+  --hidden-import uvicorn.lifespan.on \ 
   engine.py
 """
 
@@ -813,5 +813,5 @@ python -m PyInstaller --onefile --name ditoo-server \
   engine.py
 """
 
-"É possível que de erro ao rodar na rede, veja se a redfe está como publica ou privada, teste alterar para privada"
+"É possível que de erro ao rodar na rede, veja se a rede está como publica ou privada, teste alterar para privada"
 "É preciso fazer um ajuste para evitar erro caso não haja nenhum arquivo indexado"
