@@ -1,4 +1,4 @@
-from database.db import Conversation, Message, SessionLocal, User, UserMemory, engine
+from database.db import Conversation, Folder, Message, SessionLocal, User, UserMemory, engine
 import re
 import os
 import sys
@@ -135,6 +135,56 @@ env_create()
 
 # --- mDNS --- Registra o serviço na rede local para descoberta automática
 from zeroconf.asyncio import AsyncZeroconf
+
+def sync_folders(base_path: str, user: str, newFolder: str, parent_id: str):
+    db = SessionLocal()
+    try:    
+        root_folder = db.query(Folder).filter_by(path=base_path).first()
+        if not root_folder:
+            root_folder = Folder(
+                name=os.path.basename(base_path) or base_path,
+                path=base_path,
+                parent_id=None,
+                user_id=user
+            )
+            db.add(root_folder)
+            db.commit()
+            db.refresh(root_folder)
+
+        parent_folder = db.query(Folder).filter_by(id=parent_id).first()
+        if not parent_folder:
+            raise HTTPException(
+                status_code=404, 
+                detail=f"Pasta pai não encontrada para o ID: {parent_id}"
+            )
+
+        newFolderPath = os.path.join(parent_folder.path, newFolder)
+
+        if not os.path.exists(newFolderPath):
+            os.makedirs(newFolderPath, exist_ok=True)
+
+        existing_folder = db.query(Folder).filter_by(path=newFolderPath).first()
+        if existing_folder:
+            print(f"A pasta já existe no banco: {existing_folder.name} (ID: {existing_folder.id})")
+            return existing_folder
+
+        new_folder_obj = Folder(
+            name=newFolder,
+            path=newFolderPath,
+            parent_id=parent_id,
+            user_id=user
+        )
+        db.add(new_folder_obj)
+        db.commit()
+        db.refresh(new_folder_obj)
+
+        return new_folder_obj
+
+    except Exception as e:
+        db.rollback()
+        raise e
+    finally:
+        db.close()
 
 async def registrar_mdns():
     ip = socket.gethostbyname(socket.gethostname())
@@ -319,6 +369,38 @@ def current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
         return username
     except JWTError:
         raise HTTPException(status_code=401, detail="Invalid token")
+
+@app.get("/getFolders")
+def getFolders():
+    db = SessionLocal()
+    try:
+        # Executa a busca e retorna uma lista de objetos Folder
+        folders = db.query(Folder).all()
+        
+        if not folders:
+            return {"message": "Nenhuma pasta encontrada."}
+
+        # Serializa a lista de pastas para um formato JSON compatível
+        result = []
+        for f in folders:
+            print(f"ID: {f.id} | Nome: {f.name} | Path: {f.path}")
+            result.append({
+                "id": f.id,
+                "name": f.name,
+                "path": f.path,
+                "parent_id": f.parent_id,
+                "user_id": f.user_id,
+                "is_public": f.is_public
+            })
+
+        return result
+    finally:
+        db.close()
+
+@app.post("/addFolder")
+def syncFolders():
+    sync_folders(DOCS_PATH, user="a8b4dc00-e0ff-4813-b977-b6c04e6c356c", newFolder="Teste", parent_id="40f27b23-0809-4c7c-ac84-63b2ea750d8d" )
+
     
 @app.post("/insertUserMemory")
 def insert_user_memory(memory: dict, user=Depends(current_user)):
