@@ -84,6 +84,26 @@ class UserMemory(Base):
     active = Column(Boolean, default=True)
     user = relationship("User", back_populates="memories")
 
+class Folder(Base):
+    __tablename__ = 'folders'
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    name = Column(String, nullable=False)
+    user_id = Column(String, ForeignKey('users.id'), nullable=False)
+    path = Column(String, nullable=False, unique=True)
+    parent_id = Column(String, ForeignKey('folders.id'), nullable=True)
+    is_public = Column(Boolean, default=False)
+
+    parent = relationship("Folder", remote_side=[id], back_populates="children")
+    children = relationship("Folder", back_populates="parent", cascade="all, delete-orphan")
+
+class FolderAccess(Base):
+    __tablename__ = 'folder_access'
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    folder_id = Column(String, ForeignKey('folders.id'), nullable=False)
+    user_id = Column(String, ForeignKey('users.id'), nullable=False)
+    access_level = Column(String, default="read")
+    created_at = Column(DateTime, default=utcnow)
+
 Base.metadata.create_all(bind=engine)
 # Insert de teste no SQLITE
 """
