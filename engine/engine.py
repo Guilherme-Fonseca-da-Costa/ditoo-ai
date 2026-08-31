@@ -1,4 +1,4 @@
-from database.db import Conversation, Folder, Message, SessionLocal, User, UserMemory, engine
+from database.db import Conversation, Folder, FolderAccess, Message, SessionLocal, User, UserMemory, engine
 import re
 import os
 import sys
@@ -136,8 +136,94 @@ env_create()
 # --- mDNS --- Registra o serviço na rede local para descoberta automática
 from zeroconf.asyncio import AsyncZeroconf
 
-def sync_folders(base_path: str, user: str, newFolder: str, parent_id: str):
+def str_to_bool(value) -> bool:
+    """Converte valores vindos do frontend (bool nativo ou string) em bool real.
+    Cuidado: bool('False') seria True em Python puro, por isso comparamos o
+    conteúdo da string em vez de usar bool(value) diretamente."""
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() in ("true", "1", "yes", "sim")
+
+
+def get_folder_for_path(db, dir_path: str):
+    """Retorna o registro Folder correspondente ao diretório informado.
+    Se não existir ainda no banco (ex: pasta já existia no disco antes do
+    app rastrear pastas), cria como pública, associada ao usuário admin
+    quando houver um. Se ainda não existir nenhum admin cadastrado (ex:
+    primeiríssimo boot do servidor, antes do registro inicial), cria a
+    pasta mesmo assim, sem dono definido — user_id fica None. Isso evita
+    que a indexação inicial derrube o servidor inteiro com IntegrityError
+    antes mesmo dele terminar de subir."""
+    folder = db.query(Folder).filter_by(path=dir_path).first()
+    if folder:
+        return folder
+
+    admin_user = db.query(User).filter_by(role="admin").first()
+    if not admin_user:
+        print(f"AVISO: nenhum admin cadastrado ainda — pasta '{dir_path}' será criada sem dono definido (is_public=True).")
+
+    folder = Folder(
+        name=os.path.basename(dir_path) or dir_path,
+        path=dir_path,
+        parent_id=None,
+        user_id=admin_user.id if admin_user else None,
+        is_public=True
+    )
+    db.add(folder)
+    db.commit()
+    db.refresh(folder)
+    return folder
+
+
+def user_can_access_folder(db, db_user, folder) -> bool:
+    """Regra central de permissão: admin vê tudo, pasta pública todo mundo vê,
+    dono da pasta vê a sua, e qualquer outro precisa de FolderAccess explícito."""
+    if db_user.role == "admin":
+        return True
+    if folder.is_public:
+        return True
+    if folder.user_id == db_user.id:
+        return True
+    access = db.query(FolderAccess).filter_by(
+        folder_id=folder.id, user_id=db_user.id
+    ).first()
+    return access is not None
+
+
+def get_accessible_folder_ids(db, db_user):
+    """Retorna None se o usuário pode ver tudo (admin), ou o conjunto de
+    folder_ids que ele tem permissão de acessar."""
+    if db_user.role == "admin":
+        return None
+
+    accessible = set()
+    for f in db.query(Folder).all():
+        if f.is_public or f.user_id == db_user.id:
+            accessible.add(f.id)
+
+    for g in db.query(FolderAccess).filter_by(user_id=db_user.id).all():
+        accessible.add(g.folder_id)
+
+    return accessible
+
+
+def collect_folder_ids_recursive(db, folder) -> list[str]:
+    """Coleta o id da pasta e de todas as subpastas descendentes, recursivamente.
+    Usado para garantir que excluir uma pasta remova também os embeddings e
+    permissões de tudo que está dentro dela."""
+    ids = [folder.id]
+    children = db.query(Folder).filter_by(parent_id=folder.id).all()
+    for child in children:
+        ids.extend(collect_folder_ids_recursive(db, child))
+    return ids
+
+
+def sync_folders(base_path: str, newFolder: str, parent_id: str, isPublic, user: str):
     db = SessionLocal()
+    db_user = db.query(User).filter_by(email=user).first()
+    if not db_user:
+        db.close()
+        raise HTTPException(status_code=404, detail="Usuário não encontrado")
     try:    
         root_folder = db.query(Folder).filter_by(path=base_path).first()
         if not root_folder:
@@ -145,18 +231,25 @@ def sync_folders(base_path: str, user: str, newFolder: str, parent_id: str):
                 name=os.path.basename(base_path) or base_path,
                 path=base_path,
                 parent_id=None,
-                user_id=user
+                user_id=db_user.id,
+                is_public=True
             )
             db.add(root_folder)
             db.commit()
             db.refresh(root_folder)
 
-        parent_folder = db.query(Folder).filter_by(id=parent_id).first()
-        if not parent_folder:
-            raise HTTPException(
-                status_code=404, 
-                detail=f"Pasta pai não encontrada para o ID: {parent_id}"
-            )
+        # Se o frontend não enviou parent_id (opção "Pasta raiz" selecionada),
+        # usamos a pasta raiz do app como pai — sem isso, a busca abaixo por
+        # id="" nunca encontra nada e toda criação de pasta raiz falhava com 404.
+        if not parent_id:
+            parent_folder = root_folder
+        else:
+            parent_folder = db.query(Folder).filter_by(id=parent_id).first()
+            if not parent_folder:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Pasta pai não encontrada para o ID: {parent_id}"
+                )
 
         newFolderPath = os.path.join(parent_folder.path, newFolder)
 
@@ -171,8 +264,9 @@ def sync_folders(base_path: str, user: str, newFolder: str, parent_id: str):
         new_folder_obj = Folder(
             name=newFolder,
             path=newFolderPath,
-            parent_id=parent_id,
-            user_id=user
+            parent_id=parent_folder.id,
+            user_id=db_user.id,
+            is_public=str_to_bool(isPublic)
         )
         db.add(new_folder_obj)
         db.commit()
@@ -222,37 +316,82 @@ collection = client.get_or_create_collection(
 )
 
 
+def index_file(caminho: str):
+    """Lê, faz o split e indexa (upsert) um único arquivo, associando ao
+    folder_id correto da pasta onde ele está fisicamente agora.
+    Usado tanto na indexação inicial quanto pelo watchdog."""
+    file_name = os.path.basename(caminho)
+    complete_text = ""
+
+    if file_name.endswith(".txt"):
+        with open(caminho, 'r', encoding='utf-8') as f:
+            complete_text = f.read()
+    elif file_name.endswith(".pdf"):
+        doc = fitz.open(caminho)
+        for pag in doc:
+            complete_text += pag.get_text()
+    elif file_name.endswith(".xlsx"):
+        complete_text = readXLSX(caminho)
+
+    if not complete_text:
+        return
+
+    db = SessionLocal()
+    try:
+        folder = get_folder_for_path(db, os.path.dirname(caminho))
+    finally:
+        db.close()
+
+    chunks = splitter(complete_text)
+    for i, block in enumerate(chunks):
+        collection.upsert(
+            documents=[block],
+            ids=[f"{file_name}_part_{i}"],
+            metadatas=[{"fonte": file_name, "folder_id": folder.id}]
+        )
+    print(f"🆕 Arquivo: {file_name} indexado em {len(chunks)} blocos (pasta: {folder.name})...")
+
+
+def remove_file_from_index(file_name: str):
+    """Remove todos os chunks de um arquivo do ChromaDB pelo nome do arquivo."""
+    try:
+        collection.delete(where={"fonte": {"$eq": file_name}})
+    except Exception as e:
+        print(f"AVISO: falha ao remover embeddings de {file_name}: {e}")
+
+
 # --- Watchdog --- Observa a pasta de documentos e indexa novos arquivos automaticamente
 class WatchFolder(FileSystemEventHandler):
     def on_created(self, event):
         if not event.is_directory:
             print(f"\n🆕 Novo arquivo detectado: {event.src_path}")
             time.sleep(1)
-            self.index_folder(event.src_path)
-    
-    def index_folder(self, caminho):
-        file_name = os.path.basename(caminho)
-        complete_text = ""
-        print(f"\n🆕 Indexando novo arquivo: {file_name}")
-        if file_name.endswith(".txt"):
-            with open(caminho, 'r', encoding='utf-8') as f:
-                complete_text = f.read()
-        elif file_name.endswith(".pdf"):
-            doc = fitz.open(caminho)
-            for pag in doc:
-                complete_text += pag.get_text()
-        elif file_name.endswith(".xlsx"):
-            complete_text = readXLSX(caminho)
+            try:
+                index_file(event.src_path)
+            except Exception as e:
+                print(f"ERRO ao indexar {event.src_path}: {e}")
 
-        if complete_text:
-            chunks = splitter(complete_text)
-            for i, block in enumerate(chunks):
-                collection.upsert(
-                    documents=[block],
-                    ids=[f"{file_name}_part_{i}"],
-                    metadatas=[{"fonte": file_name}]
-                )
-            print(f"\n🆕 Arquivo: {file_name} indexado em {len(chunks)} blocos...")
+    def on_moved(self, event):
+        """Sem isso, mover um arquivo entre pastas pelo explorador de arquivos
+        do sistema operacional nunca atualizava o folder_id no ChromaDB — o
+        chunk continuava vinculado à pasta de origem, o que causava o
+        comportamento visto de acesso liberado/bloqueado na pasta errada."""
+        if event.is_directory:
+            return
+        print(f"\n📦 Arquivo movido: {event.src_path} -> {event.dest_path}")
+        old_name = os.path.basename(event.src_path)
+        remove_file_from_index(old_name)
+        time.sleep(0.5)
+        try:
+            index_file(event.dest_path)
+        except Exception as e:
+            print(f"ERRO ao reindexar arquivo movido {event.dest_path}: {e}")
+
+    def on_deleted(self, event):
+        if event.is_directory:
+            return
+        print(f"\n🗑️ Arquivo removido do disco: {event.src_path}")
+        remove_file_from_index(os.path.basename(event.src_path))
 
 if not os.path.exists(DOCS_PATH):
     os.makedirs(DOCS_PATH)
@@ -283,6 +422,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+def to_public_path(abs_path: str) -> str:
+    try:
+        rel = os.path.relpath(abs_path, BASE_PATH)
+    except ValueError:
+        rel = os.path.basename(abs_path)
+    rel = rel.replace("\\", "/")
+    return "/" + rel if not rel.startswith("/") else rel
+
 
 # Splitter --- Divide o texto em blocos menores para indexação
 def splitter(texto, chunk_length=500, overlap=250):
@@ -296,7 +443,55 @@ def splitter(texto, chunk_length=500, overlap=250):
     return chunks
 
 
-# Carregar documentos com caminho absoluto
+def carregar_documentos_recursivo(diretorio):
+    """Varre um diretório e todas as suas subpastas recursivamente, indexando
+    cada arquivo suportado e associando ao folder_id correto de onde ele está.
+    Se get_folder_for_path falhar por qualquer motivo (ex: erro de banco),
+    a exceção é registrada e a varredura desse diretório é interrompida sem
+    derrubar o restante do processo de indexação nem o boot do servidor."""
+    db = SessionLocal()
+    try:
+        folder = get_folder_for_path(db, diretorio)
+    except Exception as e:
+        print(f"ERRO ao registrar pasta '{diretorio}': {e} — pulando indexação desta pasta.")
+        db.close()
+        return
+    finally:
+        db.close()
+
+    for item in os.listdir(diretorio):
+        caminho = os.path.join(diretorio, item)
+
+        if os.path.isdir(caminho):
+            carregar_documentos_recursivo(caminho)
+            continue
+
+        if item.endswith((".txt", ".pdf", ".xlsx")):
+            try:
+                texto_completo = ''
+                if item.endswith(".txt"):
+                    with open(caminho, 'r', encoding='utf-8') as f:
+                        texto_completo = f.read()
+                elif item.endswith(".pdf"):
+                    doc = fitz.open(caminho)
+                    for pag in doc:
+                        texto_completo += pag.get_text()
+                elif item.endswith(".xlsx"):
+                    texto_completo = readXLSX(caminho)
+
+                if texto_completo:
+                    chunks = splitter(texto_completo)
+                    for i, bloco in enumerate(chunks):
+                        collection.upsert(
+                            documents=[bloco],
+                            ids=[f"{item}_part_{i}"],
+                            metadatas=[{"fonte": item, "folder_id": folder.id}]
+                        )
+                    print(f"{item} indexado em {len(chunks)} blocos (pasta: {folder.name}).")
+            except Exception as e:
+                print(f"ERRO ao indexar {caminho}: {e}")
+
+
 def carregar_documentos(diretorio=None):
     if diretorio is None:
         diretorio = DOCS_PATH
@@ -306,28 +501,17 @@ def carregar_documentos(diretorio=None):
         print(f"Pasta '{diretorio}' criada.")
         return
 
-    print("Indexando documentos...")
-    for arquivo in os.listdir(diretorio):
-        caminho = os.path.join(diretorio, arquivo)
-        texto_completo = ''
-
-        if arquivo.endswith(".txt"):
-            with open(caminho, 'r', encoding='utf-8') as f:
-                texto_completo = f.read()
-        elif arquivo.endswith(".pdf"):
-            doc = fitz.open(caminho)
-            for pag in doc:
-                texto_completo += pag.get_text()
-
-        if texto_completo:
-            chunks = splitter(texto_completo)
-            for i, bloco in enumerate(chunks):
-                collection.upsert(
-                    documents=[bloco],
-                    ids=[f"{arquivo}_part_{i}"],
-                    metadatas=[{"fonte": arquivo}]
-                )
-            print(f"{arquivo} indexado em {len(chunks)} blocos.")
+    print("Indexando documentos (recursivamente)...")
+    try:
+        carregar_documentos_recursivo(diretorio)
+    except Exception as e:
+        # Rede de segurança final: nenhum erro de indexação deve derrubar o
+        # boot do servidor. Se algo inesperado acontecer aqui, registramos e
+        # seguimos em frente — o servidor sobe mesmo que a indexação inicial
+        # tenha falhado parcialmente, e pode ser reparada depois via
+        # /reindexAll assim que o problema for corrigido.
+        print(f"ERRO CRÍTICO na indexação inicial: {e}")
+        print("O servidor continuará subindo, mas a indexação pode estar incompleta.")
     print("Base de dados atualizada!")
 
 carregar_documentos()
@@ -343,6 +527,16 @@ class UserCreate(BaseModel):
     email: str
     password: str
     role: str
+
+class FolderCreate(BaseModel):
+    name: str
+    parentId: str
+    isPublic: str
+
+class FolderAccessGrant(BaseModel):
+    folderId: str
+    userId: str
+    accessLevel: str = "read"
 
 class UserLogin(BaseModel):
     email: str
@@ -370,36 +564,192 @@ def current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
     except JWTError:
         raise HTTPException(status_code=401, detail="Invalid token")
 
+
+def require_admin(db, user_email: str) -> User:
+    """Busca o usuário e garante que é admin, ou lança 403/404."""
+    db_user = db.query(User).filter_by(email=user_email).first()
+    if not db_user:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado")
+    if db_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Apenas administradores podem executar esta ação")
+    return db_user
+
+
 @app.get("/getFolders")
-def getFolders():
+def getFolders(user: str = Depends(current_user)):
     db = SessionLocal()
     try:
-        # Executa a busca e retorna uma lista de objetos Folder
-        folders = db.query(Folder).all()
-        
-        if not folders:
-            return {"message": "Nenhuma pasta encontrada."}
+        db_user = db.query(User).filter_by(email=user).first()
+        if not db_user:
+            raise HTTPException(status_code=404, detail="Usuário não encontrado")
 
-        # Serializa a lista de pastas para um formato JSON compatível
+        folders = db.query(Folder).all()
         result = []
         for f in folders:
-            print(f"ID: {f.id} | Nome: {f.name} | Path: {f.path}")
-            result.append({
-                "id": f.id,
-                "name": f.name,
-                "path": f.path,
-                "parent_id": f.parent_id,
-                "user_id": f.user_id,
-                "is_public": f.is_public
-            })
+            if user_can_access_folder(db, db_user, f):
+                result.append({
+                    "id": f.id,
+                    "name": f.name,
+                    "path": to_public_path(f.path),
+                    "parent_id": f.parent_id,
+                    "user_id": f.user_id,
+                    "isPublic": f.is_public
+                })
 
         return result
     finally:
         db.close()
 
-@app.post("/addFolder")
-def syncFolders():
-    sync_folders(DOCS_PATH, user="a8b4dc00-e0ff-4813-b977-b6c04e6c356c", newFolder="Teste", parent_id="40f27b23-0809-4c7c-ac84-63b2ea750d8d" )
+@app.post("/createFolder")
+def syncFolders(folder: FolderCreate, user: str = Depends(current_user)):
+    new_folder = sync_folders(
+        DOCS_PATH,
+        newFolder=folder.name,
+        parent_id=folder.parentId,
+        isPublic=folder.isPublic,
+        user=user
+    )
+    return {
+        "id": new_folder.id,
+        "name": new_folder.name,
+        "path": to_public_path(new_folder.path),
+        "parent_id": new_folder.parent_id,
+        "user_id": new_folder.user_id,
+        "isPublic": new_folder.is_public
+    }
+
+
+@app.delete("/deleteFolder/{folder_id}")
+def delete_folder(folder_id: str, user: str = Depends(current_user)):
+    db = SessionLocal()
+    try:
+        db_user = db.query(User).filter_by(email=user).first()
+        if not db_user:
+            raise HTTPException(status_code=404, detail="Usuário não encontrado")
+
+        folder = db.query(Folder).filter_by(id=folder_id).first()
+        if not folder:
+            raise HTTPException(status_code=404, detail="Pasta não encontrada")
+
+        if db_user.role != "admin" and folder.user_id != db_user.id:
+            raise HTTPException(status_code=403, detail="Sem permissão para remover esta pasta")
+
+        all_ids = collect_folder_ids_recursive(db, folder)
+
+        db.query(FolderAccess).filter(FolderAccess.folder_id.in_(all_ids)).delete(synchronize_session=False)
+
+        try:
+            collection.delete(where={"folder_id": {"$in": all_ids}})
+        except Exception as e:
+            print(f"AVISO: falha ao remover embeddings da pasta {folder.id}: {e}")
+
+        if os.path.exists(folder.path):
+            shutil.rmtree(folder.path)
+
+        db.delete(folder)
+        db.commit()
+        return {"message": "Pasta removida com sucesso"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        db.close()
+
+
+@app.post("/reindexAll")
+def reindex_all(user: str = Depends(current_user)):
+    """Força reindexação completa de tudo dentro de DOCS_PATH."""
+    db = SessionLocal()
+    try:
+        require_admin(db, user)
+    finally:
+        db.close()
+
+    try:
+        collection.delete(where={"folder_id": {"$ne": "__never_matches__"}})
+    except Exception as e:
+        print(f"AVISO: falha ao limpar coleção antes de reindexar: {e}")
+
+    carregar_documentos()
+    return {"message": "Reindexação completa concluída"}
+
+
+@app.post("/grantFolderAccess")
+def grant_folder_access(grant: FolderAccessGrant, user: str = Depends(current_user)):
+    db = SessionLocal()
+    try:
+        require_admin(db, user)
+
+        folder = db.query(Folder).filter_by(id=grant.folderId).first()
+        if not folder:
+            raise HTTPException(status_code=404, detail="Pasta não encontrada")
+
+        target_user = db.query(User).filter_by(id=grant.userId).first()
+        if not target_user:
+            raise HTTPException(status_code=404, detail="Usuário alvo não encontrado")
+
+        existing = db.query(FolderAccess).filter_by(
+            folder_id=grant.folderId, user_id=grant.userId
+        ).first()
+        if existing:
+            existing.access_level = grant.accessLevel
+        else:
+            db.add(FolderAccess(
+                folder_id=grant.folderId,
+                user_id=grant.userId,
+                access_level=grant.accessLevel
+            ))
+        db.commit()
+        return {"message": "Acesso concedido"}
+    except HTTPException:
+        raise
+    finally:
+        db.close()
+
+
+@app.delete("/revokeFolderAccess/{folder_id}/{user_id}")
+def revoke_folder_access(folder_id: str, user_id: str, user: str = Depends(current_user)):
+    db = SessionLocal()
+    try:
+        require_admin(db, user)
+
+        access = db.query(FolderAccess).filter_by(
+            folder_id=folder_id, user_id=user_id
+        ).first()
+        if not access:
+            raise HTTPException(status_code=404, detail="Permissão não encontrada")
+
+        db.delete(access)
+        db.commit()
+        return {"message": "Acesso revogado"}
+    except HTTPException:
+        raise
+    finally:
+        db.close()
+
+
+@app.get("/getFolderAccess/{folder_id}")
+def get_folder_access(folder_id: str, user: str = Depends(current_user)):
+    db = SessionLocal()
+    try:
+        require_admin(db, user)
+
+        accesses = db.query(FolderAccess).filter_by(folder_id=folder_id).all()
+        result = []
+        for a in accesses:
+            granted_user = db.query(User).filter_by(id=a.user_id).first()
+            result.append({
+                "userId": a.user_id,
+                "username": granted_user.username if granted_user else None,
+                "accessLevel": a.access_level
+            })
+        return result
+    except HTTPException:
+        raise
+    finally:
+        db.close()
 
     
 @app.post("/insertUserMemory")
@@ -410,10 +760,14 @@ def insert_user_memory(memory: dict, user=Depends(current_user)):
         if not db_user:
             raise HTTPException(status_code=404, detail="Usuário não encontrado")
 
+        content = memory.get("content") or memory.get("memory_value")
+        if not content:
+            raise HTTPException(status_code=400, detail="Campo 'content' é obrigatório")
+
         new_memory = UserMemory(
             user_id=db_user.id,
-            memory_key=memory.get("memory_key"),
-            memory_value=memory.get("memory_value")
+            content=content,
+            category=memory.get("category", "geral")
         )
         db.add(new_memory)
         db.commit()
@@ -429,12 +783,15 @@ def remove_user_memory(memory: dict, user=Depends(current_user)):
         if not db_user:
             raise HTTPException(status_code=404, detail="Usuário não encontrado")
 
-        new_memory = UserMemory(
-            user_id=db_user.id,
-            memory_key=memory.get("memory_key"),
-            memory_value=memory.get("memory_value")
-        )
-        db.delete(new_memory)
+        memory_id = memory.get("id") or memory.get("memory_key")
+        if not memory_id:
+            raise HTTPException(status_code=400, detail="Campo 'id' é obrigatório")
+
+        existing = db.query(UserMemory).filter_by(id=memory_id, user_id=db_user.id).first()
+        if not existing:
+            raise HTTPException(status_code=404, detail="Memória não encontrada")
+
+        db.delete(existing)
         db.commit()
         return {"message": "Memória do usuário removida com sucesso!"}
     finally:
@@ -455,7 +812,7 @@ def get_user_memories(user=Depends(current_user)):
         )
 
         return [
-            {"memory_key": m.id, "memory_value": m.content}
+            {"memory_key": m.id, "memory_value": m.content, "category": m.category}
             for m in memories
         ]
     finally:
@@ -578,7 +935,7 @@ async def upload_file(file: UploadFile = File(...), user=Depends(current_user)):
     
     print(f"Arquivo recebido: {file.filename}")
     return {"message": f"Arquivo {file.filename} enviado com sucesso!"}
-# Endpoint para receber perguntas, consultar o ChromaDB e retornar respostas geradas pelo modelo
+
 @app.post("/ask")
 async def answer(request_data: Ask, user=Depends(current_user)):
     db = SessionLocal()
@@ -624,6 +981,28 @@ async def answer(request_data: Ask, user=Depends(current_user)):
         include=["documents", "metadatas", "distances"]
     )
 
+    # --- Filtro de permissão por pasta ---
+    accessible_ids = get_accessible_folder_ids(db, db_user)
+
+    def is_allowed(meta):
+        if accessible_ids is None:  # admin: acesso irrestrito
+            return True
+        return meta.get("folder_id") in accessible_ids
+
+    if results['metadatas'] and results['metadatas'][0]:
+        filtered_metadatas, filtered_documents, filtered_distances = [], [], []
+        for i, meta in enumerate(results['metadatas'][0]):
+            if is_allowed(meta):
+                filtered_metadatas.append(meta)
+                filtered_documents.append(results['documents'][0][i])
+                filtered_distances.append(results['distances'][0][i])
+
+        results = {
+            'metadatas': [filtered_metadatas],
+            'documents': [filtered_documents],
+            'distances': [filtered_distances],
+        }
+
     rawScores = {}
     for i, meta in enumerate(results['metadatas'][0]):
         archive = meta["fonte"]
@@ -662,10 +1041,10 @@ async def answer(request_data: Ask, user=Depends(current_user)):
             fonte for fonte, score in smlFonts.items()
             if max_score - score <= MIN_GAP
         ]
-        winnerFonts = sorted(winnerFonts, key=lambda f: smlFonts[f], reverse=True)[:max_fonts]  # corta aqui, já elimina o bug do 97%
+        winnerFonts = sorted(winnerFonts, key=lambda f: smlFonts[f], reverse=True)[:max_fonts]
 
         percents = {
-            fonte: round(smlFonts[fonte] * 100)   # usa a MESMA métrica (smlFonts), não mais rawScores separado
+            fonte: round(smlFonts[fonte] * 100)
             for fonte in winnerFonts
         }
         print(f"DEBUG: Fontes vencedoras ({MIN_GAP}): {winnerFonts}")
@@ -678,7 +1057,7 @@ async def answer(request_data: Ask, user=Depends(current_user)):
             texto = results['documents'][0][i]
             fonte_para_chunks.setdefault(fonte, []).append(texto)
 
-        for fonte in winnerFonts:   # sem [:max_fonts] de novo, já foi cortado acima
+        for fonte in winnerFonts:
             chunks = fonte_para_chunks.get(fonte, [])
             textos = "\n---\n".join(chunks)
             context_parts.append(f"### {fonte}\n{textos}")
@@ -764,18 +1143,7 @@ Responda sempre em Português do Brasil, em tom profissional mas acessível — 
 
         loop = asyncio.get_event_loop()
         stream = await loop.run_in_executor(
-            None,  # usa thread pool padrão
-            lambda: ollama.chat(
-                model=MODEL,
-                messages=messages,
-                stream=True,
-                keep_alive=-1
-            )
-        )
-
-        loop = asyncio.get_event_loop()
-        stream = await loop.run_in_executor(
-            None,  # usa thread pool padrão
+            None,
             lambda: ollama.chat(
                 model=MODEL,
                 messages=messages,
