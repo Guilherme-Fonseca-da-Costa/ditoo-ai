@@ -214,6 +214,24 @@ const CONST_FOLDERS = [
     path: "Ditoo/documentos",
     type: "normal",
   },
+  {
+    id: 2,
+    name: "Documentos Gerais",
+    path: "Ditoo/documentos",
+    type: "normal",
+  },
+  {
+    id: 3,
+    name: "Documentos Gerais",
+    path: "Ditoo/documentos",
+    type: "normal",
+  },
+  {
+    id: 4,
+    name: "Documentos Gerais",
+    path: "Ditoo/documentos",
+    type: "normal",
+  },
 ];
 
 const MODELS = [
@@ -540,55 +558,7 @@ function SystemSettings() {
             </SettingRow>
           </div>
 
-          {/* ── Pastas ── */}
-          <SectionHeader
-            title="Pastas de Documentos"
-            desc="Gerencie onde o Ditoo busca e indexa seus arquivos."
-          />
-          <div className="cfg-card">
-            {folders.length === 0 ? (
-              <p className="cfg-empty-msg">Nenhuma pasta configurada.</p>
-            ) : (
-              <div className="cfg-folder-list">
-                {folders.map((f) => (
-                  <div key={f.id} className="cfg-folder-item">
-                    <div className="cfg-folder-icon">
-                      <Icons.Folder />
-                    </div>
-                    <div className="cfg-folder-info">
-                      <span className="cfg-folder-name">{f.name}</span>
-                      <span className="cfg-folder-path font-mono">
-                        {f.path}
-                      </span>
-                    </div>
-                    <span
-                      className={`cfg-folder-badge ${f.type === "secret" ? "secret" : ""}`}
-                    >
-                      {f.type === "secret" ? "Secreta" : "Normal"}
-                    </span>
-                    <div className="cfg-folder-actions">
-                      <button className="cfg-icon-btn" title="Editar">
-                        <Icons.Edit />
-                      </button>
-                      <button
-                        className="cfg-icon-btn danger"
-                        title="Remover"
-                        onClick={() => removeFolder(f.id)}
-                      >
-                        <Icons.Trash />
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-            <div className="cfg-divider" />
-
-            <button className="cfg-btn-outline" style={{ margin: 14 }}>
-              <Icons.Plus /> Adicionar pasta
-            </button>
-          </div>
-
+         
           {/* ── Usuários ── */}
           <SectionHeader
             title="Gerenciar Usuários"
@@ -721,6 +691,8 @@ function MemorySettings() {
   loadData();
 }, []);
 
+
+
   async function saveMaxHistory(value: number) {
     setMaxHistory(value);
     try {
@@ -820,7 +792,380 @@ function MemorySettings() {
   );
 }
 
-type Tab = "user" | "system" | "memory";
+type Folder = {
+  id: string;
+  name: string;
+  parent_id: string | null;
+  isPublic: boolean
+  path: string;
+};
+
+// ─── Gerenciamento de acesso por pasta (FolderAccess) ───────────────────────
+
+type FolderAccessEntry = {
+  userId: string;
+  username: string | null;
+  accessLevel: string;
+};
+
+type AppUserLite = {
+  id: string;
+  username: string;
+  email: string;
+  role: "admin" | "user";
+};
+
+function FolderAccessPanel({ folder }: { folder: Folder }) {
+  const [users, setUsers] = useState<AppUserLite[]>([]);
+  const [accessList, setAccessList] = useState<FolderAccessEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedUserId, setSelectedUserId] = useState("");
+  const [selectedLevel, setSelectedLevel] = useState("read");
+  const [granting, setGranting] = useState(false);
+  const [revokingId, setRevokingId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function loadData() {
+    setLoading(true);
+    setError(null);
+    try {
+      const [allUsers] = await Promise.all([
+        api.getUsers(),
+        
+      ]);
+      setUsers(allUsers);
+
+    } catch (err) {
+      console.error("Erro ao carregar acessos da pasta:", err);
+      setError("Não foi possível carregar os acessos desta pasta.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    loadData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [folder.id]);
+
+  // Usuários que ainda não têm acesso concedido a esta pasta
+  const availableUsers = users.filter(
+    (u) => !accessList.some((a) => a.userId === u.id)
+  );
+
+  async function handleGrant() {
+    if (!selectedUserId) return;
+    setGranting(true);
+    setError(null);
+    try {
+      await api.grantFolderAccess(folder.id, selectedUserId, selectedLevel);
+      setSelectedUserId("");
+      setSelectedLevel("read");
+      await loadData();
+    } catch (err) {
+      console.error("Erro ao conceder acesso:", err);
+      setError("Não foi possível conceder o acesso.");
+    } finally {
+      setGranting(false);
+    }
+  }
+
+  async function handleRevoke(userId: string) {
+    setRevokingId(userId);
+    setError(null);
+    try {
+      
+      setAccessList((prev) => prev.filter((a) => a.userId !== userId));
+    } catch (err) {
+      console.error("Erro ao revogar acesso:", err);
+      setError("Não foi possível revogar o acesso.");
+    } finally {
+      setRevokingId(null);
+    }
+  }
+
+  if (loading) {
+    return <p className="cfg-empty-msg">Carregando permissões...</p>;
+  }
+
+  return (
+    <div className="cfg-folder-access-panel">
+      {error && <span className="cfg-warning">{error}</span>}
+
+      {accessList.length === 0 ? (
+        <p className="cfg-empty-msg">
+          Nenhum usuário com acesso concedido a esta pasta ainda.
+        </p>
+      ) : (
+        <div className="cfg-user-list">
+          {accessList.map((a) => (
+            <div key={a.userId} className="cfg-user-item">
+              <div className="avatar cfg-user-avatar">
+                {(a.username ?? "?").slice(0, 2).toUpperCase()}
+              </div>
+              <div className="cfg-user-info">
+                <span className="cfg-user-name">
+                  {a.username ?? "Usuário removido"}
+                </span>
+                <span className="cfg-user-email font-mono">
+                  {a.accessLevel}
+                </span>
+              </div>
+              <div className="cfg-user-actions">
+                <button
+                  className="cfg-icon-btn danger"
+                  title="Revogar acesso"
+                  onClick={() => handleRevoke(a.userId)}
+                  disabled={revokingId === a.userId}
+                >
+                  <Icons.Trash />
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="cfg-divider" />
+
+      <div className="cfg-create-user-grid">
+        <select
+          className="cfg-select"
+          value={selectedUserId}
+          onChange={(e) => setSelectedUserId(e.target.value)}
+        >
+          <option value="">Selecione um usuário</option>
+          {availableUsers.map((u) => (
+            <option key={u.id} value={u.id}>
+              {u.username} ({u.email})
+            </option>
+          ))}
+        </select>
+        <select
+          className="cfg-select"
+          value={selectedLevel}
+          onChange={(e) => setSelectedLevel(e.target.value)}
+        >
+          <option value="read">Leitura</option>
+          <option value="write">Escrita</option>
+        </select>
+      </div>
+      <div className="cfg-row-action">
+        <button
+          className="cfg-btn-primary"
+          onClick={handleGrant}
+          disabled={!selectedUserId || granting}
+        >
+          <Icons.Plus /> {granting ? "Concedendo..." : "Conceder acesso"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function FoldersSettings() {
+  const [folders, setFolders] = useState<Folder[]>([]);
+  const [loadingFolders, setLoadingFolders] = useState(true);
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [expandedFolderId, setExpandedFolderId] = useState<string | null>(
+    null
+  );
+  const [newFolder, setNewFolder] = useState({
+    name: "",
+    parentId: "",
+    isPublic: "",
+  });
+  const [creating, setCreating] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  useEffect(() => {
+    async function loadFolders() {
+      try {
+        const data = await api.getFolders();
+        setFolders(data);
+      } catch (err) {
+        console.error("Erro ao carregar pastas:", err);
+      } finally {
+        setLoadingFolders(false);
+      }
+    }
+    loadFolders();
+  }, []);
+
+  async function createFolder() {
+    if (!newFolder.name.trim()) return;
+    setCreating(true);
+    try {
+      const created = await api.createFolder(
+        newFolder.name,
+        newFolder.parentId,
+        newFolder.isPublic || ""
+      );
+      setFolders((prev) => [...prev, created]);
+      setNewFolder({ name: "", parentId: "", isPublic: "" });
+      setShowAddForm(false);
+    } catch (err) {
+      console.error("Erro ao criar pasta:", err);
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  async function removeFolder(id: string) {
+    setDeletingId(id);
+    try {
+      await api.deleteFolder(id);
+      setFolders((prev) => prev.filter((f) => f.id !== id));
+      if (expandedFolderId === id) setExpandedFolderId(null);
+    } catch (err) {
+      console.error("Erro ao remover pasta:", err);
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
+  return (
+    <div className="cfg-content">
+      <SectionHeader
+        title="Pastas de Documentos"
+        desc="Gerencie onde o Ditoo busca e indexa seus arquivos."
+      />
+
+      <div className="cfg-card">
+        {loadingFolders ? (
+          <p className="cfg-empty-msg">Carregando pastas...</p>
+        ) : folders.length === 0 ? (
+          <p className="cfg-empty-msg">Nenhuma pasta configurada.</p>
+        ) : (
+          <div className="cfg-folder-list">
+            {folders.map((f) => (
+              <div key={f.id}>
+                <div className="cfg-folder-item">
+                  <div className="cfg-folder-icon">
+                    <Icons.Folder />
+                  </div>
+                  <div className="cfg-folder-info">
+                    <span className="cfg-folder-name">{f.name}</span>
+                    <span className="cfg-folder-path font-mono">
+                      {f.path}
+                    </span>
+                  </div>
+                  <span
+                    className={`cfg-folder-badge ${f.isPublic === false ? "secret" : ""}`}
+                  >
+                    {f.isPublic === false ? "Secreta" : "Pública"}
+                  </span>
+                  <div className="cfg-folder-actions">
+                    {f.isPublic === false && (
+                      <button
+                        className="cfg-icon-btn"
+                        title="Gerenciar permissões"
+                        onClick={() =>
+                          setExpandedFolderId((prev) =>
+                            prev === f.id ? null : f.id
+                          )
+                        }
+                      >
+                        <Icons.Key />
+                      </button>
+                    )}
+                    <button className="cfg-icon-btn" title="Editar">
+                      <Icons.Edit />
+                    </button>
+                    <button
+                      className="cfg-icon-btn danger"
+                      title="Remover"
+                      onClick={() => removeFolder(f.id)}
+                      disabled={deletingId === f.id}
+                    >
+                      <Icons.Trash />
+                    </button>
+                  </div>
+                </div>
+
+                {f.isPublic === false && expandedFolderId === f.id && (
+                  <FolderAccessPanel folder={f} />
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div className="cfg-divider" />
+
+        {/* ── Formulário de nova pasta ── */}
+        {showAddForm ? (
+          <>
+            <div className="cfg-create-user-grid">
+              <input
+                className="cfg-input"
+                placeholder="Nome da pasta"
+                value={newFolder.name}
+                onChange={(e) =>
+                  setNewFolder((f) => ({ ...f, name: e.target.value }))
+                }
+              />
+              <select
+                className="cfg-select"
+                value={newFolder.parentId}
+                onChange={(e) =>
+                  setNewFolder((f) => ({ ...f, parentId: e.target.value }))
+                }
+              >
+                <option value="">Pasta raiz (sem pai)</option>
+                {folders.map((f) => (
+                  <option key={f.id} value={f.id}>
+                    {f.name}
+                  </option>
+                ))}
+              </select>
+              <select
+                className="cfg-select"
+                value={String(newFolder.isPublic)}
+                onChange={(e) =>{console.log({ isPublic: e.target.value })
+                  setNewFolder((f) => ({ ...f, isPublic: e.target.value }))
+                }}
+              >
+                <option value="true">Pública</option>
+                <option value="false">Secreta</option>
+              </select>
+            </div>
+            <div className="cfg-row-action">
+              <button
+                className="cfg-btn-ghost"
+                onClick={() => {
+                  setShowAddForm(false);
+                  setNewFolder({ name: "", parentId: "", isPublic: "" });
+                }}
+              >
+                Cancelar
+              </button>
+              <button
+                className="cfg-btn-primary"
+                onClick={createFolder}
+                disabled={creating}
+              >
+                <Icons.Plus /> {creating ? "Salvando..." : "Salvar pasta"}
+              </button>
+            </div>
+          </>
+        ) : (
+          <button
+            className="cfg-btn-outline"
+            style={{ margin: 14 }}
+            onClick={() => setShowAddForm(true)}
+          >
+            <Icons.Plus /> Adicionar pasta
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+
+
+type Tab = "user" | "system" | "memory" | "folders";
 
 export default function Config() {
   const [tab, setTab] = useState<Tab>("user");
@@ -865,12 +1210,21 @@ export default function Config() {
             <span className="cfg-nav-lock"></span>
           )}
         </button>
+        <button
+          className={`cfg-nav-item ${tab === "folders" ? "active" : ""} ${api.getToken()?.role !== "admin" ? "disabled" : ""}`}
+          onClick={() => api.getToken()?.role === "admin" && setTab("folders")}
+          disabled={api.getToken()?.role !== "admin"}
+        >
+          <Icons.Folder /> Pastas
+            <span className="cfg-nav-lock"></span>
+        </button>
       </nav>
 
       <div className="cfg-body">
         {tab === "user" && <UserSettings />}
         {tab === "system" && <SystemSettings />}
         {tab === "memory" && <MemorySettings />}
+        {tab === "folders" && <FoldersSettings />}
       </div>
        {showApplyButton && (
         <button

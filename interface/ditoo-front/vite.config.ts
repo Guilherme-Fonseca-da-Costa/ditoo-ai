@@ -66,6 +66,26 @@ export default defineConfig({
         changeOrigin: true,
         secure: false,
       },
+      "/createFolder": {
+        target: "http://127.0.0.1:8000",
+        changeOrigin: true,
+        secure: false,
+      },
+      "/getFolders": {
+        target: "http://127.0.0.1:8000",
+        changeOrigin: true,
+        secure: false,
+      },
+      "/deleteFolder": {
+        target: "http://127.0.0.1:8000",
+        changeOrigin: true,
+        secure: false,
+      },
+      "grantFolderAccess": {
+        target: "http://127.0.0.1:8000",
+        changeOrigin: true,
+        secure: false,
+      }
     },
   },
 });
