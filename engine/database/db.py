@@ -58,7 +58,6 @@ class Conversation(Base):
     created_at = Column(DateTime, default=utcnow)
     updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
     archived = Column(Boolean, default=False)
-
     user = relationship("User", back_populates="conversations")
     messages = relationship("Message", back_populates="conversation", cascade="all, delete-orphan", order_by="Message.created_at")
 
@@ -88,12 +87,6 @@ class Folder(Base):
     __tablename__ = 'folders'
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     name = Column(String, nullable=False)
-    # Tornado opcional (era NOT NULL): no primeiro boot do servidor, antes de
-    # qualquer usuário admin existir, a indexação inicial (carregar_documentos)
-    # precisa criar o registro da pasta raiz mesmo sem um dono ainda definido.
-    # Com NOT NULL, isso derrubava o servidor inteiro com IntegrityError antes
-    # mesmo dele subir. Pastas sem dono continuam funcionando normalmente
-    # porque o acesso é resolvido por is_public, não por user_id.
     user_id = Column(String, ForeignKey('users.id'), nullable=True)
     path = Column(String, nullable=False, unique=True)
     parent_id = Column(String, ForeignKey('folders.id'), nullable=True)
