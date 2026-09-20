@@ -207,33 +207,6 @@ const CONST_USERS = [
   { id: 1, name: "John Doe", email: "john.doe@empresa.com", role: "admin" },
 ];
 
-const CONST_FOLDERS = [
-  {
-    id: 1,
-    name: "Documentos Gerais",
-    path: "Ditoo/documentos",
-    type: "normal",
-  },
-  {
-    id: 2,
-    name: "Documentos Gerais",
-    path: "Ditoo/documentos",
-    type: "normal",
-  },
-  {
-    id: 3,
-    name: "Documentos Gerais",
-    path: "Ditoo/documentos",
-    type: "normal",
-  },
-  {
-    id: 4,
-    name: "Documentos Gerais",
-    path: "Ditoo/documentos",
-    type: "normal",
-  },
-];
-
 const MODELS = [
   { value: "qwen2.5:7b", label: "Qwen 2.5 7B", tag: "Recomendado" },
   { value: "deepseek-r1:8b", label: "DeepSeek R1 8B", tag: "Preciso" },
@@ -445,7 +418,6 @@ function UserSettings() {
 function SystemSettings() {
   const [model, setModel] = useState("qwen2.5:7b");
   const [parallelReqs, setParallel] = useState(3);
-  const [folders, setFolders] = useState(CONST_FOLDERS);
   const [, setUsers] = useState(CONST_USERS);
   const [dataUsers, setDataUsers] = useState<AppUser[]>();
   const [newUser, setNewUser] = useState({
@@ -455,9 +427,7 @@ function SystemSettings() {
     role: "user",
   });
 
-  function removeFolder(id: number) {
-    setFolders((f) => f.filter((x) => x.id !== id));
-  }
+  
   function removeUser(id: number) {
     setUsers((u) => u.filter((x) => x.id !== id));
   }
@@ -947,7 +917,7 @@ function FolderAccessPanel({ folder }: { folder: Folder }) {
           onChange={(e) => setSelectedLevel(e.target.value)}
         >
           <option value="read">Leitura</option>
-          <option value="write">Escrita</option>
+          <option value="write">Leitura / Escrita</option>
         </select>
       </div>
       <div className="cfg-row-action">
@@ -1211,9 +1181,9 @@ export default function Config() {
           )}
         </button>
         <button
-          className={`cfg-nav-item ${tab === "folders" ? "active" : ""} ${api.getToken()?.role !== "admin" ? "disabled" : ""}`}
-          onClick={() => api.getToken()?.role === "admin" && setTab("folders")}
-          disabled={api.getToken()?.role !== "admin"}
+          className={`cfg-nav-item ${tab === "folders" ? "active" : ""}`}
+          onClick={() => setTab("folders")}
+          
         >
           <Icons.Folder /> Pastas
             <span className="cfg-nav-lock"></span>

@@ -8,7 +8,7 @@ interface Props {
 
 export default function Alert({ text, type = "success", onClose }: Props) {
   useEffect(() => {
-    const timer = setTimeout(onClose, 3300); // igual à duração da animação no CSS
+    const timer = setTimeout(onClose, 3300);
     return () => clearTimeout(timer);
   }, [onClose]);
 

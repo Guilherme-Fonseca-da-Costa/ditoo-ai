@@ -766,6 +766,27 @@ async function sendMessage(text: string) {
   let firstContent = true;
   let realConversationId: string | null = null;
 
+   let revealQueue = ""
+   let revealedText = ""
+    let streamDone = false;
+
+   const REVEAL_CHARS_PER_TICK = 3;
+  const REVEAL_INTERVAL_MS = 20;
+
+  const revealTimer = setInterval(() => {
+    if (revealQueue.length === 0) {
+      if (streamDone) clearInterval(revealTimer);
+      return;
+    }
+    const chunk = revealQueue.slice(0, REVEAL_CHARS_PER_TICK);
+    revealQueue = revealQueue.slice(REVEAL_CHARS_PER_TICK);
+    revealedText += chunk;
+
+    setMessages((prev) =>
+      prev.map((m) => (m.id === newAiId ? { ...m, text: revealedText } : m)),
+    );
+  }, REVEAL_INTERVAL_MS);
+
   try {
     const response = await fetch("/ask", {
       method: "POST",
@@ -803,13 +824,8 @@ async function sendMessage(text: string) {
             ...prev,
             { id: newAiId, sender: "ai", text: data.text ?? "" },
           ]);
-        } else {
-          setMessages((prev) =>
-            prev.map((m) =>
-              m.id === newAiId ? { ...m, text: m.text + (data.text ?? "") } : m,
-            ),
-          );
-        }
+        } 
+        revealQueue += data.text ?? "";
         if (data.winner && data.percent != null) {
           lastSources = (data.winner as string[]).map((name) => ({
             name,
@@ -818,6 +834,16 @@ async function sendMessage(text: string) {
           }));
         }
       }
+    });
+
+    streamDone = true;
+    await new Promise<void>((resolve) => {
+      const flushCheck = setInterval(() => {
+        if (revealQueue.length === 0) {
+          clearInterval(flushCheck);
+          resolve();
+        }
+      }, REVEAL_INTERVAL_MS);
     });
 
     setMessages((prev) =>
