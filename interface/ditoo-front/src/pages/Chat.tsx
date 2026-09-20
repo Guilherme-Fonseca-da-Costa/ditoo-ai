@@ -665,7 +665,19 @@ function removeAlert(id: number) {
   const [showConfig, setShowConfig] = useState(false);
   const [activeSources, setActiveSources] = useState<Source[]>([]);
   const messageRefs = useRef<Record<string, HTMLDivElement | null>>({});
-  const username = localStorage.getItem("username");
+  const [username, setUsername] = useState<string | null>(null);
+
+  useEffect(() => {
+  api.getMe().then((me) => {
+    if (!me) {
+      navigate("/login");
+    } else {
+      setUsername(me.username);
+    }
+  });
+}, []);
+
+  
 
   // histórico de conversas
   const [history, setHistory] = useState<HistoryItem[]>([]);
@@ -678,11 +690,7 @@ function removeAlert(id: number) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
-
-  useEffect(() => {
-    if (!api.getToken()) navigate("/login");
-   
-  });
+  
 
   useEffect(() => {
     console.log("Fetching history..." + fetchHistory());
@@ -792,8 +800,8 @@ async function sendMessage(text: string) {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${localStorage.getItem(TOKEN_KEY)}`,
       },
+      credentials: "include",
       body: JSON.stringify({
         texto: text,
         conversationId: isNewConversation ? null : activeHistoryId,
@@ -979,7 +987,9 @@ function handlePromptChip(text: string) {
   const navigate = useNavigate();
 
   function handleLogout() {
-    localStorage.removeItem(TOKEN_KEY);
+    api.logout().finally(() => {
+      navigate("/login");
+    })
     navigate("/login");
   }
 

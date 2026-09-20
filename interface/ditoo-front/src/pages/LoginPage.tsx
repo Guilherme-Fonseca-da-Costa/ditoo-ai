@@ -29,10 +29,13 @@ function removeAlert(id: number) {
 }
 
   useEffect(() => {
-    if (api.getToken()) {
+  api.getMe().then((me) => {
+    if (me) {
       navigate("/chat");
     }
-  }, [])
+  });
+}, []);
+
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -41,8 +44,7 @@ function removeAlert(id: number) {
       console.log(data?.error)
       console.log("Não autorizado")
       pushAlert("Email ou senha incorretos", "error")
-    }
-    if (api.getToken()) {
+    }else {
       navigate("/chat");
     }
   }
@@ -90,7 +92,7 @@ function removeAlert(id: number) {
             autoComplete="current-password"
             style={{ marginTop: 8 }}
           />
-          <button onClick={handleSubmit} className="login-btn" type="submit">
+          <button onClick={handleSubmit} className="login-btn">
             Entrar
           </button>
         </form>

@@ -6,86 +6,11 @@ export default defineConfig({
   plugins: [react()],
   server: {
     proxy: {
-      "/ask": {
-        target: "http://127.0.0.1:8000",
-        changeOrigin: true,
-        secure: false,
-      },
-      "/upload": {
-        target: "http://127.0.0.1:8000",
-        changeOrigin: true,
-        secure: false,
-      },
-      "/changeModel": {
-        target: "http://127.0.0.1:8000",
-        changeOrigin: true,
-        secure: false,
-      },
-      "/loginUser": {
-        target: "http://127.0.0.1:8000",
-        changeOrigin: true,
-        secure: false,
-      },
-      "/register": {
-        target: "http://127.0.0.1:8000",
-        changeOrigin: true,
-        secure: false,
-      },
-      "/getUsers": {
-        target: "http://127.0.0.1:8000",
-        changeOrigin: true,
-        secure: false,
-      },
-      "/getHistory": {
-        target: "http://127.0.0.1:8000",
-        changeOrigin: true,
-        secure: false,
-      },
-      "/fetchMessages": {
-        target: "http://127.0.0.1:8000",
-        changeOrigin: true,
-        secure: false,
-      },
-      "/getUserMemories": {
-        target: "http://127.0.0.1:8000",
-        changeOrigin: true,
-        secure: false,
-      },
-      "/getConfig": {
-        target: "http://127.0.0.1:8000",
-        changeOrigin: true,
-        secure: false,
-      },
-      "/updateConfig": {
-        target: "http://127.0.0.1:8000",
-        changeOrigin: true,
-        secure: false,
-      },
-      "/deleteMemory": {
-        target: "http://127.0.0.1:8000",
-        changeOrigin: true,
-        secure: false,
-      },
-      "/createFolder": {
-        target: "http://127.0.0.1:8000",
-        changeOrigin: true,
-        secure: false,
-      },
-      "/getFolders": {
-        target: "http://127.0.0.1:8000",
-        changeOrigin: true,
-        secure: false,
-      },
-      "/deleteFolder": {
-        target: "http://127.0.0.1:8000",
-        changeOrigin: true,
-        secure: false,
-      },
-      "/grantFolderAccess": {
-        target: "http://127.0.0.1:8000",
-        changeOrigin: true,
-        secure: false,
-      }
+      "^/(ask|loginUser|register|logout|me|getUsers|upload|changeModel|getHistory|fetchMessages|getConfig|updateConfig|getUserMemories|deleteMemory|getFolders|createFolder|deleteFolder|grantFolderAccess|revokeFolderAccess|getFolderAccess|insertUserMemory|removeUserMemory|reindexAll)(/.*)?$":
+        {
+          target: "http://localhost:8000",
+          changeOrigin: true,
+        },
     },
   },
 });

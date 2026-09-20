@@ -15,12 +15,15 @@ import asyncio
 from pydantic import BaseModel
 from passlib.context import CryptContext
 from jose import jwt, JWTError
-from fastapi import Depends, HTTPException, UploadFile, File
+from fastapi import Depends, HTTPException, UploadFile, File, Response, Request
 import shutil
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import datetime
 from sqlalchemy import Column, Integer, String, DateTime, ForeignKey
 from chromadb.utils import embedding_functions
+
+COOKIE_SECURE = os.getenv("COOKIE_SECURE", "False").lower() in ("true")
+COOKIE_NAME = "ditoo_token"
 
 #TOOLS para o Ollama
 
@@ -580,10 +583,11 @@ SECRET_KEY = os.getenv("SECRET_KEY")
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 security = HTTPBearer()
 
-def current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
-    
-    token = credentials.credentials
+def current_user(request: Request):
+    token = request.cookies.get(COOKIE_NAME)
     print(f"CURRENT: {token}")
+    if not token:
+        raise HTTPException(status_code=401, detail="Token não fornecido")
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
         username = payload.get("sub")
@@ -938,7 +942,7 @@ async def getUsers(user=Depends(current_user)):
         for u in db_users
     ]
 @app.post("/loginUser")
-async def login(user: UserLogin):
+async def login(user: UserLogin, response: Response):
     print(f"Usuário: {user}")
     db = SessionLocal()
     db_user = db.query(User).filter_by(email=user.email).first()
@@ -953,7 +957,34 @@ async def login(user: UserLogin):
         "role": db_user.role
     }, SECRET_KEY, algorithm="HS256")
     
-    return {"token": token}
+    response.set_cookie(
+        key=COOKIE_NAME,
+        value=token,
+        httponly=True,
+        secure=COOKIE_SECURE,
+        samesite="lax",
+        max_age=8 * 3600,
+        path="/"
+    )
+    return {"message": "Login realizado", "username": db_user.username, "role": db_user.role}
+
+@app.post("/logout")
+def logout(response: Response):
+    response.delete_cookie(COOKIE_NAME, path="/")
+    return {"message": "Logout realizado"}
+
+
+@app.get("/me")
+async def me(user: str = Depends(current_user)):
+    db = SessionLocal()
+    try:
+        db_user = db.query(User).filter_by(email=user).first()
+        if not db_user:
+            raise HTTPException(status_code=404, detail="Usuário não encontrado")
+        return {"email": db_user.email, "username": db_user.username, "role": db_user.role}
+    finally:
+        db.close()
+
 
 @app.post("/upload")
 async def upload_file(file: UploadFile = File(...), user=Depends(current_user)):
