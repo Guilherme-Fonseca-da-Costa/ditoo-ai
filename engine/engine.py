@@ -1,4 +1,5 @@
 from database.db import Conversation, Folder, FolderAccess, Message, SessionLocal, User, UserMemory, engine
+from tools.code_executor import executar_analise_tabular
 import re
 import os
 import sys
@@ -20,12 +21,40 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import datetime
 from sqlalchemy import Column, Integer, String, DateTime, ForeignKey
 from chromadb.utils import embedding_functions
+
+#TOOLS para o Ollama
+
+TOOLS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "executar_analise_tabular",
+            "description": "Executa scripts Pandas em arquivos Excel, CSV e PDF para calcular métricas, contar registros ou filtrar linhas.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "caminho_arquivo": {
+                        "type": "string",
+                        "description": "Caminho exato do arquivo (ex: 'relatorio_desligamentos_funcionarios.xlsx')."
+                    },
+                    "pergunta": {
+                        "type": "string",
+                        "description": "A dúvida específica do usuário a ser respondida pela análise."
+                    }
+                },
+                "required": ["caminho_arquivo", "pergunta"]
+            }
+        }
+    }
+]
+
+
 embedding = embedding_functions.SentenceTransformerEmbeddingFunction(
     model_name="intfloat/multilingual-e5-large")
 
 
-os.environ["OLLAMA_NUM_PARALLEL"] = "4"
-os.environ["OLLAMA_MAX_LOADED_MODELS"] = "1"
+os.environ["OLLAMA_NUM_PARALLEL"] = "1"
+os.environ["OLLAMA_MAX_LOADED_MODELS"] = "2"
 os.environ["OLLAMA_CONTEXT_LENGTH"] = "8192"
 # Verifica se o Ollama já está rodando antes de subir outro
 def ollama_ativo():
@@ -1003,31 +1032,91 @@ async def answer(request_data: Ask, user=Depends(current_user)):
             'distances': [filtered_distances],
         }
 
-    rawScores = {}
-    for i, meta in enumerate(results['metadatas'][0]):
-        archive = meta["fonte"]
-        distance = results['distances'][0][i]
-        slm = 1 - distance
-        if slm > rawScores.get(archive, 0):
-            rawScores[archive] = slm
-
-    bestDistance = results['distances'][0][0] if results['distances'] and results['distances'][0] else None
-    print(f"DEBUG: Distância do resultado mais relevante: {bestDistance}")
-    print(f"Distâncias: {results['distances']}")
-
+    # A. Mapeia os arquivos físicos reais aos quais o usuário tem permissão
+    arquivos_disponiveis = []
     if results['metadatas'] and results['metadatas'][0]:
+        for meta in results['metadatas'][0]:
+            # Busca o caminho do arquivo no disco
+            caminho_arquivo = os.path.join(DOCS_PATH, meta["fonte"])
+            if os.path.exists(caminho_arquivo):
+                arquivos_disponiveis.append(caminho_arquivo)
+
+    arquivos_unicos = list(set(arquivos_disponiveis))
+
+    # B. Primeira chamada rápida ao Ollama para decidir se usa a Tool
+    tool_utilizada = False
+    contexto = ""
+
+    if arquivos_unicos:
+        prompt_decisao = (
+            f"Pergunta do usuário: '{request_data.texto}'\n"
+            f"Arquivos disponíveis no contexto: {arquivos_unicos}\n"
+            f"Se a pergunta exigir análises exatas, contagens, somas, médias ou estatísticas em tabelas/relatórios destes arquivos, use a ferramenta disponível."
+        )
+
+        try:
+            resposta_decisao = ollama.chat(
+                model=MODEL,
+                messages=[{"role": "user", "content": prompt_decisao}],
+                tools=TOOLS,
+            )
+
+            tool_calls = resposta_decisao.get("message", {}).get("tool_calls")
+
+            if tool_calls:
+                for call in tool_calls:
+                    if call["function"]["name"] == "executar_analise_tabular":
+                        args = call["function"]["arguments"]
+
+                        print("\n[TOOL CALL DETECTADA]")
+                        print(f" -> Arquivo extraído pelo modelo: {args.get('caminho_arquivo')}")
+                        print(f" -> Pergunta repassada: {args.get('pergunta', request_data.texto)}\n")
+
+                        # Executa o pipeline Pandas + Juiz do code_executor.py
+                        resultado_analise = executar_analise_tabular(
+                            caminho_arquivo=args.get("caminho_arquivo"),
+                            pergunta=args.get("pergunta", request_data.texto),
+                        )
+
+
+                        print("[TOOL RESULTADO OBTIDO]")
+                        print(f" -> Sucesso: {resultado_analise.get('sucesso')}")
+                        print(f" -> Resultado: {resultado_analise.get('resultado')}")
+                        print(f" -> Código gerado:\n{resultado_analise.get('codigo')}\n")
+
+                        tool_utilizada = True
+                        contexto = f"""
+                            ### RESULTADO DA ANÁLISE TABULAR EXECUTADA VIA CÓDIGO
+                            Arquivo analisado: {args.get('caminho_arquivo')}
+                            Sucesso na execução: {resultado_analise.get('sucesso')}
+                            Resultado obtido: {resultado_analise.get('resultado')}
+                            Código Pandas Utilizado:
+                            ```python
+                            {resultado_analise.get('codigo')}
+                            """
+                    print(f"DEBUG: Tool de Análise Tabular executada com sucesso!")
+                    break
+        except Exception as e:
+            print(f"AVISO: Falha ao tentar acionar Tool Calling: {e}")
+
+# ==================================================
+
+    
+    rawScores = {}
+    smlFonts = {}
+    
+    if results.get('metadatas') and results['metadatas'][0]:
         for i, meta in enumerate(results['metadatas'][0]):
             archive = meta["fonte"]
-            distances = results['distances'][0][i]
-            slm = 1 - distances
+            distance = results['distances'][0][i]
+            slm = 1 - distance
+            if slm > rawScores.get(archive, 0):
+                rawScores[archive] = slm
             if slm > smlFonts.get(archive, 0):
                 smlFonts[archive] = slm
 
-    fonts = [meta['fonte'] for meta in results["metadatas"][0]]
-    print(f"DEBUG: Similaridade por fonte: {smlFonts}")
-
-    MIN_GAP = 0.15
-    max_fonts = 3
+        fonts = [meta['fonte'] for meta in results["metadatas"][0]]
+        print(f"DEBUG: Similaridade por fonte: {smlFonts}")
 
     if not smlFonts:
         winnerFonts = []
@@ -1048,27 +1137,39 @@ async def answer(request_data: Ask, user=Depends(current_user)):
             for fonte in winnerFonts
         }
         print(f"DEBUG: Fontes vencedoras ({MIN_GAP}): {winnerFonts}")
-        print(f"DEBUG: Percentuais por fonte: {percents}")
 
-    if results['documents'] and results['documents'][0]:
+    contexto_tool = contexto if tool_utilizada else ""
+
+    if results.get('documents') and results['documents'][0]:
         fonte_para_chunks = {}
         for i, meta in enumerate(results['metadatas'][0]):
             fonte = meta['fonte']
             texto = results['documents'][0][i]
             fonte_para_chunks.setdefault(fonte, []).append(texto)
 
+        context_parts = []
         for fonte in winnerFonts:
             chunks = fonte_para_chunks.get(fonte, [])
             textos = "\n---\n".join(chunks)
             context_parts.append(f"### {fonte}\n{textos}")
 
-        contexto = "\n\n".join(context_parts)
-        print(f"Contexto atual: {contexto}")
-
+        contexto_rag = "\n\n".join(context_parts)
     else:
-        contexto = "Nenhum contexto encontrado."
-        print(f"DEBUG: Sem Contexto construído com {contexto}.")
+        contexto_rag = "Nenhum contexto RAG encontrado."
 
+    # Junta o resultado exato do Pandas com o RAG (se houver)
+    if tool_utilizada:
+        contexto = contexto
+    else:
+        contexto = contexto_rag
+
+    options = (
+        {"temperature": 0.1, "repeat_penalty": 1.0}
+        if tool_utilizada
+        else {"temperature": 0.6, "repeat_penalty": 1.1}
+)
+
+    print(f"Contexto final enviado ao modelo: {contexto}")
     user_memories = db.query(UserMemory).filter_by(user_id=db_user.id).all()
     memoria_permanente = ""
     if user_memories:
@@ -1107,13 +1208,30 @@ Você recebe abaixo um CONTEXTO extraído de documentos internos, relevante (ou 
 
 Você recebe o histórico de mensagens anteriores desta conversa, mas cada nova mensagem do usuário deve ser respondida com foco apenas no que ela pede agora.
 
-- NUNCA repita, resuma ou reintroduza respostas de perguntas anteriores, a menos que a mensagem atual peça explicitamente para retomar, comparar ou continuar aquele assunto.
+- NUNCA repita, resuma ou reintroduza respostas de perguntas anteriores, a menos que a mensagem 
+  atual peça explicitamente para retomar, comparar ou continuar aquele assunto.
+- EXCEÇÃO: se a pergunta atual for idêntica ou equivalente a uma pergunta anterior (o usuário 
+  perguntou de novo a mesma coisa), responda normalmente com a informação COMPLETA de novo — 
+  nunca omita, resuma ou encurte por já ter respondido antes. Cada pergunta merece uma resposta 
+  completa e correta, mesmo que repetida.
 - Use o histórico apenas para entender referências implícitas (ex: "esse arquivo", "a pessoa que mencionei", "aquilo que você disse antes") — não para "completar" a resposta atual com informações de perguntas antigas.
 - Se a pergunta atual não tem relação nenhuma com as anteriores, responda como se fosse uma pergunta nova e isolada, sem qualquer menção ao que foi discutido antes.
 
 ## Idioma
 
 Responda sempre em Português do Brasil, em tom profissional mas acessível — como um colega experiente ajudando, não um manual técnico.
+
+## Resultado Tabular
+
+Se o CONTEXTO contiver um "RESULTADO DA ANÁLISE TABULAR EXECUTADA VIA CÓDIGO", esse resultado já foi 
+calculado com precisão via código Python real — não é uma estimativa nem uma sugestão.
+
+- Apresente TODAS as linhas do resultado, sem omitir nenhuma.
+- NUNCA questione, recalcule, valide ou conteste os números/datas retornados — eles já estão corretos.
+- NUNCA adicione justificativas próprias sobre por que um item foi ou não incluído (ex: comentários sobre 
+  paridade de dias, datas, categorias) — apenas apresente os dados exatamente como retornados.
+- Formate em linguagem natural (pode usar lista, se fizer sentido), mas o conteúdo factual deve ser 
+  uma transcrição fiel do resultado, nunca uma reinterpretação.
 
     
     CONTEXTO:
@@ -1148,7 +1266,8 @@ Responda sempre em Português do Brasil, em tom profissional mas acessível — 
                 model=MODEL,
                 messages=messages,
                 stream=True,
-                keep_alive=-1
+                keep_alive=-1,
+                options=options
             )
         )
 
