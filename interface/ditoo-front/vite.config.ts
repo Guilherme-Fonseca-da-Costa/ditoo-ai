@@ -6,7 +6,7 @@ export default defineConfig({
   plugins: [react()],
   server: {
     proxy: {
-      "^/(ask|loginUser|register|logout|me|getUsers|upload|changeModel|getHistory|fetchMessages|getConfig|updateConfig|getUserMemories|deleteMemory|getFolders|createFolder|deleteFolder|grantFolderAccess|revokeFolderAccess|getFolderAccess|insertUserMemory|removeUserMemory|reindexAll)(/.*)?$":
+      "^/(ask|loginUser|register|logout|me|getUsers|upload|changeModel|getHistory|fetchMessages|getConfig|updateConfig|getUserMemories|deleteMemory|getFolders|createFolder|deleteFolder|grantFolderAccess|revokeFolderAccess|getFolderAccess|insertUserMemory|removeUserMemory|getEmails|reindexAll)(/.*)?$":
         {
           target: "http://localhost:8000",
           changeOrigin: true,

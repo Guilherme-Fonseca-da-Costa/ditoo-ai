@@ -10,7 +10,7 @@ export const api = {
     if (res.status === 401) return { error: "Usuário ou senha incorretos" };
 
     const data = await res.json();
-    return data; // { message, username, role }
+    return data; 
   },
 
   register: async (
@@ -28,9 +28,6 @@ export const api = {
     return res.json();
   },
 
-  // Substitui o antigo getToken(): consulta o backend para saber quem
-  // está logado (o cookie é enviado automaticamente pelo navegador).
-  // Retorna null se não houver sessão válida.
   getMe: async (): Promise<{ email: string; username: string; role: string } | null> => {
     try {
       const res = await fetch("/me", { credentials: "include" });
@@ -70,7 +67,7 @@ export const api = {
   },
 
   changeModel: async (model: string) => {
-    const res = await fetch("/changeModel", {
+    const res = await fetch("/changeModel", { 
       method: "POST",
       headers: { "Content-Type": "application/json" },
       credentials: "include",
@@ -172,5 +169,17 @@ export const api = {
     });
     if (!res.ok) throw new Error("Erro ao conceder acesso à pasta");
     return res.json();
+  },
+
+  async getEmails() {
+    const res = await fetch("/getEmails", {
+      method: "GET",
+      credentials: "include",
+    });
+    if (!res.ok) throw new Error("Erro ao buscar emails");
+    const data = await res.json();
+
+  // Garante que o frontend sempre receba um array
+  return Array.isArray(data.emails) ? data.emails : [];
   },
 };

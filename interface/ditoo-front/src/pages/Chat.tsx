@@ -381,6 +381,7 @@ function TypingIndicator() {
 }
 // componente para exibir as fontes citadas em uma resposta, com animação de preenchimento da barra de relevância
 function SourceCard({ source, index }: { source: Source; index: number }) {
+  
   const fillRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -466,7 +467,18 @@ function AppearancePanel({ onClose }: { onClose: () => void }) {
 
 // painel de upload
 
+type Folder = {
+  id: string;
+  name: string;
+  parent_id: string | null;
+  isPublic: boolean
+  path: string;
+};
+
 function UploadPanel({ onClose, onUploadSuccess }: { onClose: () => void; onUploadSuccess: (message: string) => void }) {
+  const [folders, setFolders] = useState<Folder[]>([]);
+  const [loadingFolders, setLoadingFolders] = useState(true);
+  const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
   const [files, setFiles] = useState<File[]>([]);
   const [over, setOver] = useState(false);
   console.log(over);
@@ -475,6 +487,21 @@ function UploadPanel({ onClose, onUploadSuccess }: { onClose: () => void; onUplo
     e.preventDefault();
     e.stopPropagation();
   };
+
+    useEffect(() => {
+      async function loadFolders() {
+        try {
+          const data = await api.getFolders();
+          setFolders(data);
+        } catch (err) {
+          console.error("Erro ao carregar pastas:", err);
+        } finally {
+          setLoadingFolders(false);
+        }
+      }
+      loadFolders();
+    }, []);
+  
 
   async function handleSendFiles(files: File[]) {
     for (const file of files) {
@@ -501,6 +528,20 @@ function UploadPanel({ onClose, onUploadSuccess }: { onClose: () => void; onUplo
       <div className="appear-row">
         <div>
           <span>Upload</span>
+          <select
+            className="cfg-select"
+            name="folder"
+            id="folder"
+            value={selectedFolder || ""}
+            onChange={(e) => setSelectedFolder(e.target.value)}
+          >
+            <option value="">Selecione uma pasta</option>
+            {folders.map((folder) => (
+              <option key={folder.id} value={folder.path}>
+                {folder.name}
+              </option>
+            ))}
+          </select>
           <input
             ref={inputRef}
             type="file"

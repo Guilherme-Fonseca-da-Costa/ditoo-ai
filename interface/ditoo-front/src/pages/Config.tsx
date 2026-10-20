@@ -7,6 +7,7 @@ import {
 } from "../context/ThemeContext";
 import "../assets/configPage.css";
 import { api } from "../services/api";
+import { useCurrentUser } from "../hook/userCurrent";
 
 type AppUser = {
   id: number;
@@ -416,6 +417,8 @@ function UserSettings() {
 // ─── Aba: Configurações de Sistema ──────────────────────────────────────────
 
 function SystemSettings() {
+  const { user } = useCurrentUser();
+  const isAdmin = user?.role === "admin";
   const [model, setModel] = useState("qwen2.5:7b");
   const [parallelReqs, setParallel] = useState(3);
   const [, setUsers] = useState(CONST_USERS);
@@ -459,7 +462,7 @@ function SystemSettings() {
 
   return (
     <>
-      {api.getToken()?.role === "admin" ? (
+      {isAdmin ? (
         <div className="cfg-content">
           {/* ── Modelo de Linguagem ── */}
           <SectionHeader
@@ -933,6 +936,7 @@ function FolderAccessPanel({ folder }: { folder: Folder }) {
   );
 }
 
+
 function FoldersSettings() {
   const [folders, setFolders] = useState<Folder[]>([]);
   const [loadingFolders, setLoadingFolders] = useState(true);
@@ -1138,6 +1142,8 @@ function FoldersSettings() {
 type Tab = "user" | "system" | "memory" | "folders";
 
 export default function Config() {
+  const { user } = useCurrentUser();
+  const isAdmin = user?.role === "admin";
   const [tab, setTab] = useState<Tab>("user");
   const [showApplyButton, setShowApplyButton] = useState(false);
   useEffect(() => {setShowApplyButton(true)});
@@ -1161,22 +1167,22 @@ export default function Config() {
         </button>
 
         <button
-          className={`cfg-nav-item ${tab === "system" ? "active" : ""} ${api.getToken()?.role !== "admin" ? "disabled" : ""}`}
-          onClick={() => api.getToken()?.role === "admin" && setTab("system")}
-          disabled={api.getToken()?.role !== "admin"}
+          className={`cfg-nav-item ${tab === "system" ? "active" : ""} ${!isAdmin ? "disabled" : ""}`}
+          onClick={() => isAdmin && setTab("system")}
+          disabled={!isAdmin}
         >
           <Icons.Shield /> Sistema
-          {api.getToken()?.role === "admin" && (
+          {isAdmin && (
             <span className="cfg-nav-lock"></span>
           )}
         </button>
         <button
-          className={`cfg-nav-item ${tab === "memory" ? "active" : ""} ${api.getToken()?.role !== "admin" ? "disabled" : ""}`}
-          onClick={() => api.getToken()?.role === "admin" && setTab("memory")}
-          disabled={api.getToken()?.role !== "admin"}
+          className={`cfg-nav-item ${tab === "memory" ? "active" : ""} ${!isAdmin ? "disabled" : ""}`}
+          onClick={() => isAdmin && setTab("memory")}
+          disabled={!isAdmin}
         >
           <Icons.Memory /> Memória
-          {api.getToken()?.role === "admin" && (
+          {isAdmin && (
             <span className="cfg-nav-lock"></span>
           )}
         </button>
