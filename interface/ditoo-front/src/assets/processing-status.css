@@ -1,0 +1,7 @@
+.processing-status { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; line-height: 1.5; margin-bottom: 8px; min-width: 0; }
+.processing-status:last-child { margin-bottom: 0; }
+.processing-status > span { overflow-wrap: anywhere; }
+.processing-status > svg { flex-shrink: 0; color: var(--accent); }
+.processing-spinner { animation: processing-spin 1s linear infinite; }
+@keyframes processing-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .processing-spinner { animation: none; } }

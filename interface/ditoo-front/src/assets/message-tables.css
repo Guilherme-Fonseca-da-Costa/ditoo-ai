@@ -1,0 +1,27 @@
+.message-table-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+  margin: 0.75rem 0;
+  border: 1px solid currentColor;
+  border-radius: 8px;
+}
+.message-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9em;
+  line-height: 1.5;
+}
+.message-table th,
+.message-table td {
+  padding: 0.6rem 0.8rem;
+  border-bottom: 1px solid color-mix(in srgb, currentColor 20%, transparent);
+  text-align: left;
+  vertical-align: top;
+  white-space: nowrap;
+}
+.message-table th {
+  background: color-mix(in srgb, currentColor 8%, transparent);
+  font-weight: 600;
+}
+.message-table tr:last-child td { border-bottom: 0; }
+.bubble { min-width: 0; }

@@ -5,6 +5,9 @@ import react from "@vitejs/plugin-react";
 export default defineConfig({
   plugins: [react()],
   server: {
+    watch: {
+      ignored: ["**/documentos/**", "**/vetores_db/**", "**/ditoo.db*", "**/*.upload"],
+    },
     proxy: {
       "^/(ask|loginUser|register|logout|me|getUsers|upload|changeModel|getHistory|fetchMessages|getConfig|updateConfig|getUserMemories|deleteMemory|getFolders|createFolder|deleteFolder|grantFolderAccess|revokeFolderAccess|getFolderAccess|insertUserMemory|removeUserMemory|getEmails|reindexAll)(/.*)?$":
         {

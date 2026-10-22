@@ -802,11 +802,12 @@ function FolderAccessPanel({ folder }: { folder: Folder }) {
     setLoading(true);
     setError(null);
     try {
-      const [allUsers] = await Promise.all([
+      const [allUsers, accesses] = await Promise.all([
         api.getUsers(),
-        
+        api.getFolderAccess(folder.id),
       ]);
       setUsers(allUsers);
+      setAccessList(accesses);
 
     } catch (err) {
       console.error("Erro ao carregar acessos da pasta:", err);
@@ -837,7 +838,7 @@ function FolderAccessPanel({ folder }: { folder: Folder }) {
       await loadData();
     } catch (err) {
       console.error("Erro ao conceder acesso:", err);
-      setError("Não foi possível conceder o acesso.");
+      setError(err instanceof Error ? err.message : "Não foi possível conceder o acesso.");
     } finally {
       setGranting(false);
     }
@@ -847,11 +848,11 @@ function FolderAccessPanel({ folder }: { folder: Folder }) {
     setRevokingId(userId);
     setError(null);
     try {
-      
+      await api.revokeFolderAccess(folder.id, userId);
       setAccessList((prev) => prev.filter((a) => a.userId !== userId));
     } catch (err) {
       console.error("Erro ao revogar acesso:", err);
-      setError("Não foi possível revogar o acesso.");
+      setError(err instanceof Error ? err.message : "Não foi possível revogar o acesso.");
     } finally {
       setRevokingId(null);
     }
@@ -1146,21 +1147,20 @@ export default function Config() {
   const isAdmin = user?.role === "admin";
   const [tab, setTab] = useState<Tab>("user");
   const [showApplyButton, setShowApplyButton] = useState(false);
-  useEffect(() => {setShowApplyButton(true)});
+  useEffect(() => {setShowApplyButton(true)}, []);
 
   return (
     <div className="cfg-shell">
       {/* ── Navegação lateral ── */}
-      <nav className="cfg-nav">
-        <p
-          className="section-label"
-          style={{ padding: "0 8px", marginBottom: 10 }}
-        >
+      <nav className="cfg-nav" aria-label="Seções das configurações">
+        <p className="section-label cfg-nav-title">
           Configurações
         </p>
 
         <button
           className={`cfg-nav-item ${tab === "user" ? "active" : ""}`}
+          type="button"
+          aria-pressed={tab === "user"}
           onClick={() => setTab("user")}
         >
           <Icons.User /> Usuário
@@ -1168,6 +1168,8 @@ export default function Config() {
 
         <button
           className={`cfg-nav-item ${tab === "system" ? "active" : ""} ${!isAdmin ? "disabled" : ""}`}
+          type="button"
+          aria-pressed={tab === "system"}
           onClick={() => isAdmin && setTab("system")}
           disabled={!isAdmin}
         >
@@ -1178,6 +1180,8 @@ export default function Config() {
         </button>
         <button
           className={`cfg-nav-item ${tab === "memory" ? "active" : ""} ${!isAdmin ? "disabled" : ""}`}
+          type="button"
+          aria-pressed={tab === "memory"}
           onClick={() => isAdmin && setTab("memory")}
           disabled={!isAdmin}
         >
@@ -1188,6 +1192,8 @@ export default function Config() {
         </button>
         <button
           className={`cfg-nav-item ${tab === "folders" ? "active" : ""}`}
+          type="button"
+          aria-pressed={tab === "folders"}
           onClick={() => setTab("folders")}
           
         >
@@ -1196,6 +1202,7 @@ export default function Config() {
         </button>
       </nav>
 
+      <div className="cfg-main">
       <div className="cfg-body">
         {tab === "user" && <UserSettings />}
         {tab === "system" && <SystemSettings />}
@@ -1203,17 +1210,20 @@ export default function Config() {
         {tab === "folders" && <FoldersSettings />}
       </div>
        {showApplyButton && (
+        <footer className="cfg-footer">
         <button
+          type="button"
           onClick={() => {
             setShowApplyButton(false);
             console.log("Alterações aplicadas!");
           }}
-          style={{ width: 132, position: "relative", top: 500, right: 665, marginLeft: "-132px", height: 40 }}
           className="cfg-btn-primary"
         >
           Aplicar alterações
         </button>
+        </footer>
       )}
+      </div>
     </div>
   );
 }

@@ -1,3 +1,5 @@
+import { uploadWithProgress } from "../utils/uploadTransport";
+
 export const api = {
   login: async (email: string, pass: string) => {
     const res = await fetch("/loginUser", {
@@ -40,6 +42,10 @@ export const api = {
 
   logout: async () => {
     await fetch("/logout", { method: "POST", credentials: "include" });
+    try {
+      sessionStorage.removeItem("ditoo-chat-active");
+      sessionStorage.removeItem("ditoo-chat-draft");
+    } catch { /* Storage can be disabled. */ }
   },
 
   getUsers: async () => {
@@ -50,21 +56,7 @@ export const api = {
     return res.json();
   },
 
-  upload: async (file: File) => {
-    const formData = new FormData();
-    formData.append("file", file);
-    const response = await fetch("/upload", {
-      method: "POST",
-      credentials: "include",
-      body: formData,
-    });
-
-    if (!response.ok) {
-      throw new Error(`Falha no upload: ${response.status}`);
-    }
-
-    return await response.json();
-  },
+  upload: uploadWithProgress,
 
   changeModel: async (model: string) => {
     const res = await fetch("/changeModel", { 
@@ -156,6 +148,30 @@ export const api = {
     return res.json();
   },
 
+  async getFolderAccess(folderId: string) {
+    const res = await fetch(`/getFolderAccess/${encodeURIComponent(folderId)}`, {
+      method: "GET",
+      credentials: "include",
+    });
+    if (!res.ok) {
+      const error = await res.json().catch(() => null);
+      throw new Error(typeof error?.detail === "string" ? error.detail : "Erro ao carregar permiss\u00f5es da pasta.");
+    }
+    return res.json();
+  },
+
+  async revokeFolderAccess(folderId: string, userId: string) {
+    const res = await fetch(`/revokeFolderAccess/${encodeURIComponent(folderId)}/${encodeURIComponent(userId)}`, {
+      method: "DELETE",
+      credentials: "include",
+    });
+    if (!res.ok) {
+      const error = await res.json().catch(() => null);
+      throw new Error(typeof error?.detail === "string" ? error.detail : "Erro ao revogar acesso \u00e0 pasta.");
+    }
+    return res.json();
+  },
+
   async grantFolderAccess(
     folderId: string,
     userId: string,
@@ -167,7 +183,10 @@ export const api = {
       credentials: "include",
       body: JSON.stringify({ folderId, userId, accessLevel }),
     });
-    if (!res.ok) throw new Error("Erro ao conceder acesso à pasta");
+    if (!res.ok) {
+      const error = await res.json().catch(() => null);
+      throw new Error(typeof error?.detail === "string" ? error.detail : "Erro ao conceder acesso \u00e0 pasta.");
+    }
     return res.json();
   },
 

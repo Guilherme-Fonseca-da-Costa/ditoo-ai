@@ -1,7 +1,14 @@
-import { useEffect, useRef, useState, type DragEvent } from "react";
+import { createPortal } from "react-dom";
+import { X } from "lucide-react";
+import ProcessingStatus from "../components/ProcessingStatus";
+import { appendActivity, type ActivityStep } from "../utils/activity";
+import { readNDJSONStream } from "../utils/ndjson";
+import UploadPanel from "../components/UploadPanel";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router";
 import DitooLogo from "../components/DitooLogo";
-import ReactMarkdown from "react-markdown";
+import MessageMarkdown from "../components/MessageMarkdown";
+import "../assets/message-tables.css";
 
 
 import {
@@ -26,6 +33,7 @@ interface Message {
   sender: "user" | "ai" | "assistant";
   text: string;
   sources?: Source[];
+  activity?: ActivityStep[];
 }
 
 interface HistoryItem {
@@ -35,7 +43,13 @@ interface HistoryItem {
 }
 
 // ─── Constantes ────────────────────────────────────────────────────────────────
-const TOKEN_KEY = import.meta.env.VITE_TOKEN_KEY ?? "ditoo_token";
+function readSession(key: string) {
+  try { return sessionStorage.getItem(key); } catch { return null; }
+}
+function writeSession(key: string, value: string | null) {
+  try { if (value === null) sessionStorage.removeItem(key); else sessionStorage.setItem(key, value); } catch { /* Storage can be disabled. */ }
+}
+
 // sugestões de prompts
 const SUGGESTED_PROMPTS = [
   "Qual é a política de férias da empresa?",
@@ -365,21 +379,6 @@ const Icon = {
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
 // indicador de digitação da ia
-function TypingIndicator() {
-  return (
-    <div className="msg-wrap ai">
-      <div className="msg-sender">Ditoo</div>
-      <div className="bubble ai typing-wrap">
-        <div className="typing-dots">
-          <span className="tdot" />
-          <span className="tdot" />
-          <span className="tdot" />
-        </div>
-      </div>
-    </div>
-  );
-}
-// componente para exibir as fontes citadas em uma resposta, com animação de preenchimento da barra de relevância
 function SourceCard({ source, index }: { source: Source; index: number }) {
   
   const fillRef = useRef<HTMLDivElement>(null);
@@ -416,14 +415,37 @@ function SourceCard({ source, index }: { source: Source; index: number }) {
 // painel de configurações do usuário modelo de LLM, gerenciar pastas e usuários (se for admin)
 
 function ConfigPanel({ onClose }: { onClose: () => void }) {
-  console.log("renderizando ConfigPanel");
-  return (
-    <div className="config-overlay" onClick={onClose}>
-      <div className="config-modal" onClick={(e) => e.stopPropagation()}>
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const previous = document.activeElement as HTMLElement | null;
+    const overflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    dialogRef.current?.focus();
+    const keydown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") closeRef.current();
+      if (event.key === "Tab") {
+        const controls = dialogRef.current?.querySelectorAll<HTMLElement>("button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex='0']");
+        if (!controls?.length) return;
+        const first = controls[0], last = controls[controls.length - 1];
+        if (event.shiftKey && (document.activeElement === first || document.activeElement === dialogRef.current)) { event.preventDefault(); last.focus(); }
+        else if (!event.shiftKey && (document.activeElement === last || document.activeElement === dialogRef.current)) { event.preventDefault(); first.focus(); }
+      }
+    };
+    document.addEventListener("keydown", keydown);
+    return () => { document.body.style.overflow = overflow; document.removeEventListener("keydown", keydown); previous?.focus(); };
+  }, []);
+  return createPortal(
+    <div className="config-overlay" onClick={(event) => { event.stopPropagation(); if (event.target === event.currentTarget) onClose(); }}>
+      <div ref={dialogRef} className="config-modal" role="dialog" aria-modal="true" aria-labelledby="config-dialog-title" tabIndex={-1} onClick={(event) => event.stopPropagation()}>
+        <header className="config-modal-header">
+          <h2 id="config-dialog-title">Configurações</h2>
+          <button type="button" className="config-close" aria-label="Fechar configurações" onClick={onClose}><X size={20} /></button>
+        </header>
         <Config />
       </div>
-    </div>
-  );
+    </div>, document.body);
 }
 
 // painel de aparência
@@ -461,155 +483,6 @@ function AppearancePanel({ onClose }: { onClose: () => void }) {
           ))}
         </div>
       </div>
-    </div>
-  );
-}
-
-// painel de upload
-
-type Folder = {
-  id: string;
-  name: string;
-  parent_id: string | null;
-  isPublic: boolean
-  path: string;
-};
-
-function UploadPanel({ onClose, onUploadSuccess }: { onClose: () => void; onUploadSuccess: (message: string) => void }) {
-  const [folders, setFolders] = useState<Folder[]>([]);
-  const [loadingFolders, setLoadingFolders] = useState(true);
-  const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
-  const [files, setFiles] = useState<File[]>([]);
-  const [over, setOver] = useState(false);
-  console.log(over);
-  const inputRef = useRef<HTMLInputElement>(null);
-  const prevent = (e: DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-  };
-
-    useEffect(() => {
-      async function loadFolders() {
-        try {
-          const data = await api.getFolders();
-          setFolders(data);
-        } catch (err) {
-          console.error("Erro ao carregar pastas:", err);
-        } finally {
-          setLoadingFolders(false);
-        }
-      }
-      loadFolders();
-    }, []);
-  
-
-  async function handleSendFiles(files: File[]) {
-    for (const file of files) {
-      await api.upload(file).then((res) => {
-        console.log("Arquivo enviado:", res);
-        onUploadSuccess(`Arquivo ${file.name} enviado com sucesso!`);
-      });  }
-    console.log("Enviando:", files);
-  }
-
-  async function handleDrop(e: any) {
-    prevent(e);
-    setOver(false);
-    const dropped = Array.from<File>(e.dataTransfer.files);
-    setFiles((prev) => [...prev, ...dropped]);
-  }
-
-  const removeFile = (index: any) => {
-    setFiles((prev) => prev.filter((_, i) => i !== index));
-  };
-
-  return (
-    <div className="upload-panel" onClick={(e) => e.stopPropagation()}>
-      <div className="appear-row">
-        <div>
-          <span>Upload</span>
-          <select
-            className="cfg-select"
-            name="folder"
-            id="folder"
-            value={selectedFolder || ""}
-            onChange={(e) => setSelectedFolder(e.target.value)}
-          >
-            <option value="">Selecione uma pasta</option>
-            {folders.map((folder) => (
-              <option key={folder.id} value={folder.path}>
-                {folder.name}
-              </option>
-            ))}
-          </select>
-          <input
-            ref={inputRef}
-            type="file"
-            multiple
-            hidden
-            onChange={(e) => {
-              if (!e.target.files) return;
-              const selected = Array.from<File>(e.target.files);
-              setFiles((prev) => [...prev, ...selected]);
-            }}
-          />
-          <div
-            onDragOver={(e) => {
-              prevent(e);
-              setOver(true);
-            }}
-            onDragLeave={(e) => {
-              prevent(e);
-              setOver(false);
-            }}
-            onDrop={handleDrop}
-            id="uploadArea"
-            onClick={() => inputRef.current?.click()}
-            style={{
-              display: "flex",
-              justifyContent: "center",
-              alignItems: "center",
-              flexDirection: "column",
-              gap: 6,
-              marginTop: 4,
-            }}
-          >
-            <Icon.UploadBox />
-          </div>
-        </div>
-        <div
-          style={{
-            display: "flex",
-            alignItems: "flex-start",
-            justifyContent: "flex-start",
-            flexDirection: "column",
-            overflow: "auto",
-            height: 200,
-          }}
-        >
-          {files.map((f, i) => (
-            <div key={i}>
-              <div onClick={() => removeFile(i)} className="added-archive">
-                <Icon.PDF />
-                <div style={{ display: "flex", flexDirection: "column" }}>
-                  <span>{f.name}</span>
-                  <span>{(f.size / 1024).toFixed(1)} KB</span>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-      <button
-        className="send-btn noText-btn"
-        style={{}}
-        onClick={() => {
-          handleSendFiles(files);
-          onClose();
-        }}
-      >
-        Enviar
-      </button>
     </div>
   );
 }
@@ -695,7 +568,7 @@ function removeAlert(id: number) {
   setAlerts((prev) => prev.filter((a) => a.id !== id));
 }
   const [messages, setMessages] = useState<Message[]>([]);
-  const [input, setInput] = useState("");
+  const [input, setInput] = useState(() => readSession("ditoo-chat-draft") ?? "");
   const [loading, setLoading] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(() => !isMobileViewport);
   const [rightOpen, setRightOpen] = useState(() => !isMobileViewport);
@@ -722,7 +595,10 @@ function removeAlert(id: number) {
 
   // histórico de conversas
   const [history, setHistory] = useState<HistoryItem[]>([]);
-  const [activeHistoryId, setActiveHistoryId] = useState<string | null>(null);
+  const [activeHistoryId, setActiveHistoryId] = useState<string | null>(() => readSession("ditoo-chat-active"));
+
+  useEffect(() => { writeSession("ditoo-chat-draft", input); }, [input]);
+  useEffect(() => { writeSession("ditoo-chat-active", activeHistoryId); }, [activeHistoryId]);
 
   // impede que a bolha da IA seja criada antes de chegar o primeiro texto, evitando bolhas vazias
   const [aiMsgId, setAiMsgId] = useState<number | null>(null);
@@ -761,6 +637,14 @@ function removeAlert(id: number) {
         title: c.title ?? "Nova Conversa",
         messages: []
       })));
+      const saved = readSession("ditoo-chat-active");
+      if (saved && conversations.some((conversation: { id: string }) => conversation.id === saved)) {
+        setActiveHistoryId(saved);
+        await fetchMessages(saved);
+      } else if (saved) {
+        setActiveHistoryId(null);
+        writeSession("ditoo-chat-active", null);
+      }
       console.log("Histórico carregado:", conversations);
     } catch (err) {
       console.error("Erro ao buscar histórico:", err);
@@ -775,11 +659,9 @@ function removeAlert(id: number) {
       setMessages([]);
       return;
     }
-    api.fetchMessages(historyFetchId).then((messages) => {
-      console.log("Messages fetched for history ID:", historyFetchId, messages);
-      setMessages(messages);
-      console.log("Messages set for history ID:", historyFetchId, messages);
-    });
+    const restored = await api.fetchMessages(historyFetchId);
+    if (!Array.isArray(restored)) throw new Error("Não foi possível restaurar a conversa.");
+    setMessages(restored);
   }
 
   // ─── enviar mensagem ──────────────────────────────────────────────────────────
@@ -789,9 +671,7 @@ async function sendMessage(text: string) {
 
   const userMsg: Message = { id: Date.now(), sender: "user", text };
   const updatedMessages = [...messages, userMsg];
-  setMessages(updatedMessages);
   setLoading(true);
-  setAiMsgId(null);
 
   const tempId = activeHistoryId ?? Date.now().toString();
   const isNewConversation = activeHistoryId == null;
@@ -812,7 +692,10 @@ async function sendMessage(text: string) {
 
   const newAiId = Date.now() + 1;
   let lastSources: Source[] = [];
-  let firstContent = true;
+  let receivedContent = false;
+  let activitySteps: ActivityStep[] = [{ stage: "connecting", message: "Conectando ao Ditoo..." }];
+  setAiMsgId(newAiId);
+  setMessages([...updatedMessages, { id: newAiId, sender: "ai", text: "", activity: activitySteps }]);
   let realConversationId: string | null = null;
 
    let revealQueue = ""
@@ -861,19 +744,18 @@ async function sendMessage(text: string) {
         }
       }
 
+      if (data.type === "status" && typeof data.stage === "string" && typeof data.message === "string") {
+        activitySteps = appendActivity(activitySteps, { stage: data.stage, message: data.message });
+        setMessages(previous => previous.map(message => message.id === newAiId ? { ...message, activity: activitySteps } : message));
+      }
+      if (data.type === "error") throw new Error(data.message ?? "Não foi possível concluir a resposta.");
+
       if (data.type === "memory_saved") {
         pushAlert("Ditoo se lembrará dessa informação...", "success");
       }
 
       if (data.type === "content") {
-        if (firstContent) {
-          firstContent = false;
-          setAiMsgId(newAiId);
-          setMessages((prev) => [
-            ...prev,
-            { id: newAiId, sender: "ai", text: data.text ?? "" },
-          ]);
-        } 
+        receivedContent = true;
         revealQueue += data.text ?? "";
         if (data.winner && data.percent != null) {
           lastSources = (data.winner as string[]).map((name) => ({
@@ -885,6 +767,7 @@ async function sendMessage(text: string) {
       }
     });
 
+    if (!receivedContent) throw new Error("O servidor terminou sem enviar uma resposta. Tente novamente.");
     streamDone = true;
     await new Promise<void>((resolve) => {
       const flushCheck = setInterval(() => {
@@ -908,7 +791,7 @@ async function sendMessage(text: string) {
               ...h,
               messages: [
                 ...updatedMessages,
-                { id: newAiId, sender: "ai" as const, text: "", sources: lastSources },
+                { id: newAiId, sender: "ai" as const, text: revealedText, sources: lastSources, activity: activitySteps },
               ],
             }
           : h,
@@ -916,16 +799,14 @@ async function sendMessage(text: string) {
     );
 
     audioRef.current?.play().catch(() => {});
-  } catch {
-    setMessages((prev) => [
-      ...prev,
-      {
-        id: Date.now(),
-        sender: "ai",
-        text: "Ocorreu um erro ao conectar com o servidor. Verifique se o backend está rodando.",
-      },
-    ]);
+  } catch (error) {
+    clearInterval(revealTimer);
+    const message = error instanceof Error ? error.message : "Não foi possível conectar ao servidor.";
+    activitySteps = appendActivity(activitySteps, { stage: "error", message: "O processamento foi interrompido" });
+    setMessages(previous => previous.map(item => item.id === newAiId ? { ...item, text: message, activity: activitySteps } : item));
   } finally {
+    streamDone = true;
+    clearInterval(revealTimer);
     setLoading(false);
     setAiMsgId(null);
   }
@@ -947,44 +828,6 @@ function handlePromptChip(text: string) {
   }, 0);
 }
 
-  async function readNDJSONStream(
-  response: Response,
-  onEvent: (data: any) => void,
-) {
-  if (!response.body) throw new Error("Sem corpo na resposta");
-
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split("\n");
-    buffer = lines.pop() ?? "";
-
-    for (const line of lines) {
-      if (!line.trim()) continue;
-      try {
-        onEvent(JSON.parse(line));
-      } catch {
-        console.warn("Linha NDJSON inválida, ignorando:", line);
-      }
-    }
-  }
-
-  if (buffer.trim()) {
-    try {
-      onEvent(JSON.parse(buffer));
-    } catch {
-      console.warn("Fragmento final inválido:", buffer);
-    }
-  }
-}
-
-  // função para rolar a conversa até a mensagem citada no histórico
   function scrollToMessage(id: number) {
     const el = messageRefs.current[id];
     if (!el) return;
@@ -1045,9 +888,13 @@ function handlePromptChip(text: string) {
         showUserMenu && setShowUserMenu(false);
         showAppear && setShowAppear(false);
         showModel && setShowModel(false);
-        showUpload && setShowUpload(false);
       }}
     >
+              {showUpload && (
+                <UploadPanel onClose={() => setShowUpload(false)} onUploadSuccess={(message, type) => {
+                  pushAlert(message, type)
+                }} />
+              )}
       {/* ── Header ── */}
       <header className="header">
         {/* painel lateral esquerdo: área do usuário */}
@@ -1248,7 +1095,8 @@ function handlePromptChip(text: string) {
                           messageRefs.current[msg.id] = el;
                         }}
                       >
-                        <ReactMarkdown>{msg.text}</ReactMarkdown>
+                        <ProcessingStatus steps={msg.activity ?? []} active={loading && msg.id === aiMsgId} />
+                        <MessageMarkdown text={msg.text} />
                         {msg.sender === "assistant" &&
                           msg.sources &&
                           msg.sources.length > 0 && (
@@ -1265,18 +1113,13 @@ function handlePromptChip(text: string) {
                   </div>
                 ))
             )}
-            {loading && <TypingIndicator />}
             <div ref={bottomRef} />
           </div>
 
           {/* Input */}
           {!(isMobileViewport && (sidebarOpen || rightOpen)) && (
             <div className="input-area">
-              {showUpload && (
-                <UploadPanel onClose={() => setShowUpload(false)} onUploadSuccess={(message) => {
-                  pushAlert(message)
-                }} />
-              )}
+
 
               <div className="input-wrap">
                 <textarea

@@ -27,7 +27,11 @@
   border-radius: var(--radius-lg);
   box-shadow: 0 24px 64px rgba(0, 0, 0, 0.45);
   width: min(820px, 94vw);
-  height: min(560px, 90vh);
+  height: min(640px, 90vh);
+  height: min(640px, 90dvh);
+  min-width: 0;
+  min-height: 0;
+  outline: none;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -44,7 +48,9 @@
 
 .cfg-shell {
   display: flex;
-  height: 100%;      /* agora o pai (.config-modal) tem altura definida */
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
   overflow: hidden;
 }
 
@@ -75,6 +81,7 @@
   font-family: 'DM Sans', sans-serif;
   color: var(--muted);
   width: 100%;
+  white-space: nowrap;
   text-align: left;
   transition: background var(--transition), color var(--transition);
   position: relative;
@@ -107,7 +114,10 @@
 
 .cfg-body {
   flex: 1;
+  min-width: 0;
+  min-height: 0;
   overflow-y: auto;
+  overscroll-behavior: contain;
   background: var(--bg);
   padding: 0;
 }
@@ -719,42 +729,52 @@
 
 /* ─── Responsivo mobile ───────────────────────────────────────────────────── */
 
-@media (max-width: 600px) {
-  .cfg-shell {
-    flex-direction: column;
-  }
+/* Keep scrolling content separate from navigation and actions. */
+.config-modal-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-shrink: 0; padding: 12px 18px; border-bottom: 1px solid var(--border); }
+.config-modal-header h2 { margin: 0; font-size: 16px; font-weight: 600; color: var(--text); }
+.config-close { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; padding: 0; border: 0; border-radius: 8px; color: var(--muted); background: transparent; cursor: pointer; }
+.config-close:hover { color: var(--text); background: var(--surface2); }
+.config-modal *, .config-modal *::before, .config-modal *::after { box-sizing: border-box; }
+.cfg-main { display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0; overflow: hidden; }
+.cfg-footer { display: flex; justify-content: flex-end; flex-shrink: 0; padding: 12px 20px; background: var(--surface); border-top: 1px solid var(--border); }
+.cfg-nav-title { padding: 0 8px; margin-bottom: 10px; }
+.cfg-nav-item > svg { flex-shrink: 0; }
+.cfg-content, .cfg-card, .cfg-row-label, .cfg-row-control { min-width: 0; }
+.config-close:focus-visible, .cfg-nav-item:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
+@media (max-width: 700px) {
+  .config-overlay { padding: max(8px, env(safe-area-inset-top)) max(8px, env(safe-area-inset-right)) max(8px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left)); }
+  .config-modal { width: 100%; height: 94vh; height: 94dvh; max-height: 100%; border-radius: 14px; }
+  .config-modal-header { padding: 10px 14px; }
+  .cfg-shell { flex-direction: column; }
   .cfg-nav {
-    width: 100%;
-    flex-direction: row;
-    border-right: none;
-    border-bottom: 0.5px solid var(--border);
-    padding: 8px;
-    gap: 4px;
-    overflow-x: auto;
+    width: 100%; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+    flex-shrink: 0; border-right: none; border-bottom: 1px solid var(--border);
+    padding: 10px 12px; gap: 6px; overflow: visible;
   }
-
-  .cfg-nav-item {
-    flex-shrink: 0;
-  }
-
-  .cfg-content {
-    padding: 14px 12px 24px;
-  }
-
-  .cfg-row {
-    flex-direction: column;
-    gap: 8px;
-  }
-
-  .cfg-row-control {
-    width: 100%;
-  }
-
-  .cfg-create-user-grid {
-    grid-template-columns: 1fr;
-    padding: 0 12px;
-  }
+  .cfg-nav .cfg-nav-title { display: none; }
+  .cfg-nav .cfg-nav-item { width: auto; min-width: 0; min-height: 42px; padding: 10px 12px; gap: 8px; font-size: 13px; }
+  .cfg-nav-item svg { flex-shrink: 0; }
+  .cfg-content { padding: 14px 12px 24px; max-width: none; }
+  .cfg-row { flex-direction: column; gap: 10px; padding: 12px; }
+  .cfg-row-label, .cfg-row-control { width: 100%; min-width: 0; }
+  .cfg-row-control > .cfg-input-row { width: 100%; }
+  .cfg-row-hint, .cfg-row-name, .cfg-section-desc, .cfg-warning { overflow-wrap: anywhere; }
+  .cfg-input, .cfg-select, .cfg-number-input, .cfg-textarea { min-width: 0; max-width: 100%; font-size: 16px; }
+  .cfg-input-row { width: 100%; flex-wrap: wrap; }
+  .cfg-input-row .cfg-input { flex: 1 1 140px; }
+  .cfg-create-user-grid { grid-template-columns: minmax(0, 1fr); padding: 0 12px; }
+  .cfg-row-action { flex-wrap: wrap; gap: 8px; padding: 12px; }
+  .cfg-row-action > button { flex: 1 1 auto; min-height: 42px; justify-content: center; }
+  .cfg-accents { flex-wrap: wrap; }
+  .cfg-user-item, .cfg-folder-item { flex-wrap: wrap; padding: 12px; gap: 8px; }
+  .cfg-user-info, .cfg-folder-info { flex: 1 1 calc(100% - 60px); }
+  .cfg-user-actions, .cfg-folder-actions { margin-left: auto; }
+  .cfg-folder-badge, .cfg-user-badge { margin-left: 38px; }
+  .cfg-user-email, .cfg-folder-path, .cfg-folder-name, .cfg-user-name { white-space: normal; overflow-wrap: anywhere; }
+  .cfg-icon-btn { min-width: 36px; min-height: 36px; }
+  .cfg-footer { padding: 10px 12px; }
+  .cfg-footer .cfg-btn-primary { width: 100%; min-height: 42px; justify-content: center; }
 }
 
 .cfg-memory-list {

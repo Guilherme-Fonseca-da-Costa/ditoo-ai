@@ -1,4 +1,10 @@
+from tools.activity import emitir_etapa, transmitir_processamento
+from tools.clock import responder_relogio, contexto_relogio
+from tools.retrieval import buscar_documentos_permitidos
+from typing import Literal
+from tools.uploads import nome_upload, salvar_upload, progresso_indexacao
 from database.db import Conversation, Folder, FolderAccess, Message, SessionLocal, User, UserMemory, engine
+from tools.grounding import responder_percentual
 from tools.code_executor import executar_analise_tabular, deve_analisar_tabela, formatar_resultado
 import pandas as pd
 import re
@@ -16,7 +22,7 @@ import asyncio
 from pydantic import BaseModel
 from passlib.context import CryptContext
 from jose import jwt, JWTError
-from fastapi import Depends, HTTPException, UploadFile, File, Response, Request
+from fastapi import Depends, HTTPException, UploadFile, File, Form, Response, Request
 import shutil
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import datetime
@@ -360,28 +366,29 @@ collection = client.get_or_create_collection(
 )
 
 
-def index_file(caminho: str):
+def index_file(caminho: str, on_progress=None):
     """Lê, faz o split e indexa (upsert) um único arquivo, associando ao
     folder_id correto da pasta onde ele está fisicamente agora.
     Usado tanto na indexação inicial quanto pelo watchdog."""
     file_name = os.path.basename(caminho)
+    extensao = os.path.splitext(file_name)[1].lower()
     complete_text = ""
 
-    if file_name.endswith(".txt"):
+    if extensao == ".txt":
         with open(caminho, 'r', encoding='utf-8') as f:
             complete_text = f.read()
-    elif file_name.endswith(".pdf"):
+    elif extensao == ".pdf":
         doc = fitz.open(caminho)
         for pag in doc:
             complete_text += pag.get_text()
     elif file_name.lower().endswith(".csv"):
         complete_text = pd.read_csv(caminho, sep=None, engine="python").to_json(
             orient="records", force_ascii=False)
-    elif file_name.endswith(".xlsx"):
+    elif extensao == ".xlsx":
         complete_text = readXLSX(caminho)
 
     if not complete_text:
-        return
+        return False
 
     db = SessionLocal()
     try:
@@ -391,14 +398,19 @@ def index_file(caminho: str):
 
     collection.delete(where={"$and": [{"fonte": file_name}, {"folder_id": folder.id}]})
     chunks = splitter(complete_text)
+    if on_progress:
+        on_progress(0, len(chunks))
     for i, block in enumerate(chunks):
         collection.upsert(
             documents=[block],
             ids=[f"{folder.id}_{file_name}_part_{i}"],
             metadatas=[{"fonte": file_name, "folder_id": folder.id}]
         )
-    print(f"🆕 Arquivo: {file_name} indexado em {len(chunks)} blocos (pasta: {folder.name})...")
+        if on_progress:
+            on_progress(i + 1, len(chunks))
+    print(f"Arquivo: {file_name} indexado em {len(chunks)} blocos (pasta: {folder.name}).")
 
+    return True
 
 def remove_file_from_index(file_name: str):
     """Remove todos os chunks de um arquivo do ChromaDB pelo nome do arquivo."""
@@ -409,8 +421,12 @@ def remove_file_from_index(file_name: str):
 
 
 # --- Watchdog --- Observa a pasta de documentos e indexa novos arquivos automaticamente
+UPLOADS_EM_ANDAMENTO = set()
+
 class WatchFolder(FileSystemEventHandler):
     def on_created(self, event):
+        if event.src_path in UPLOADS_EM_ANDAMENTO:
+            return
         if not event.is_directory:
             print(f"\n🆕 Novo arquivo detectado: {event.src_path}")
             time.sleep(1)
@@ -424,7 +440,7 @@ class WatchFolder(FileSystemEventHandler):
         do sistema operacional nunca atualizava o folder_id no ChromaDB — o
         chunk continuava vinculado à pasta de origem, o que causava o
         comportamento visto de acesso liberado/bloqueado na pasta errada."""
-        if event.is_directory:
+        if event.is_directory or event.dest_path in UPLOADS_EM_ANDAMENTO:
             return
         print(f"\n📦 Arquivo movido: {event.src_path} -> {event.dest_path}")
         old_name = os.path.basename(event.src_path)
@@ -461,6 +477,8 @@ def readXLSX(caminho):
     finally:
         wb.close()
 
+
+os.makedirs(DOCS_PATH, exist_ok=True)
 
 FileObserver = Observer()
 FileObserver.schedule(WatchFolder(), path=DOCS_PATH, recursive=True)
@@ -520,20 +538,20 @@ def carregar_documentos_recursivo(diretorio):
             carregar_documentos_recursivo(caminho)
             continue
 
-        if item.endswith((".txt", ".pdf", ".xlsx", ".csv")):
+        if item.lower().endswith((".txt", ".pdf", ".xlsx", ".csv")):
             try:
                 texto_completo = ''
-                if item.endswith(".txt"):
+                if item.lower().endswith(".txt"):
                     with open(caminho, 'r', encoding='utf-8') as f:
                         texto_completo = f.read()
-                elif item.endswith(".pdf"):
+                elif item.lower().endswith(".pdf"):
                     doc = fitz.open(caminho)
                     for pag in doc:
                         texto_completo += pag.get_text()
-                elif item.endswith(".csv"):
+                elif item.lower().endswith(".csv"):
                     texto_completo = pd.read_csv(caminho, sep=None, engine="python").to_json(
                         orient="records", force_ascii=False)
-                elif item.endswith(".xlsx"):
+                elif item.lower().endswith(".xlsx"):
                     texto_completo = readXLSX(caminho)
 
                 if texto_completo:
@@ -568,7 +586,14 @@ def carregar_documentos(diretorio=None):
         print("O servidor continuará subindo, mas a indexação pode estar incompleta.")
     print("Base de dados atualizada!")
 
-carregar_documentos()
+if __package__:
+    from .tools.startup_index import inicializar_indice
+else:
+    from tools.startup_index import inicializar_indice
+
+print(f"Indice persistido: {VENV_PATH}", flush=True)
+inicializar_indice(collection, carregar_documentos)
+
 
 
 def percent_files(percentage):
@@ -590,7 +615,7 @@ class FolderCreate(BaseModel):
 class FolderAccessGrant(BaseModel):
     folderId: str
     userId: str
-    accessLevel: str = "read"
+    accessLevel: Literal["read", "write"] = "read"
 
 class UserLogin(BaseModel):
     email: str
@@ -761,7 +786,8 @@ def grant_folder_access(grant: FolderAccessGrant, user: str = Depends(current_us
                 access_level=grant.accessLevel
             ))
         db.commit()
-        return {"message": "Acesso concedido"}
+        return {"message": "Acesso concedido", "folderId": grant.folderId,
+                "userId": grant.userId, "accessLevel": grant.accessLevel}
     except HTTPException:
         raise
     finally:
@@ -794,6 +820,8 @@ def get_folder_access(folder_id: str, user: str = Depends(current_user)):
     db = SessionLocal()
     try:
         require_admin(db, user)
+        if not db.query(Folder).filter_by(id=folder_id).first():
+            raise HTTPException(status_code=404, detail="Pasta n\u00e3o encontrada")
 
         accesses = db.query(FolderAccess).filter_by(folder_id=folder_id).all()
         result = []
@@ -1013,16 +1041,47 @@ async def me(user: str = Depends(current_user)):
 
 
 @app.post("/upload")
-async def upload_file(file: UploadFile = File(...), user=Depends(current_user)):
-    pasta_destino = os.path.join(DOCS_PATH, "root")
-    os.makedirs(pasta_destino, exist_ok=True)
-    end = os.path.join(pasta_destino, file.filename)
-    
-    with open(end, "wb") as f:
-        shutil.copyfileobj(file.file, f)
-    
-    print(f"Arquivo recebido: {file.filename}")
-    return {"message": f"Arquivo {file.filename} enviado com sucesso!"}
+async def upload_file(file: UploadFile = File(...), folder_id: str | None = Form(None), progress: bool = Form(False), user=Depends(current_user)):
+    nome = nome_upload(file.filename)
+    db = SessionLocal()
+    caminho = None
+    streaming = False
+    try:
+        db_user = db.query(User).filter_by(email=user).first()
+        if not db_user:
+            raise HTTPException(status_code=404, detail="Usu\u00e1rio n\u00e3o encontrado.")
+        if folder_id:
+            folder = db.query(Folder).filter_by(id=folder_id).first()
+            if not folder:
+                raise HTTPException(status_code=404, detail="Pasta n\u00e3o encontrada.")
+        else:
+            folder = get_folder_for_path(db, os.path.join(DOCS_PATH, "root"))
+        if not user_can_access_folder(db, db_user, folder):
+            raise HTTPException(status_code=403, detail="Sem permiss\u00e3o para enviar arquivos a esta pasta.")
+        caminho = os.path.join(folder.path, nome)
+        UPLOADS_EM_ANDAMENTO.add(caminho)
+        await asyncio.to_thread(salvar_upload, file.file, folder.path, nome)
+        if progress:
+            streaming = True
+            return StreamingResponse(
+                progresso_indexacao(caminho, nome, folder.id, index_file,
+                                    lambda: UPLOADS_EM_ANDAMENTO.discard(caminho)),
+                media_type="application/x-ndjson",
+                headers={"Cache-Control":"no-cache", "X-Accel-Buffering":"no"})
+        try:
+            indexado = bool(await asyncio.to_thread(index_file, caminho))
+        except Exception as exc:
+            print(f"ERRO ao indexar upload {nome}: {exc}")
+            indexado = False
+        mensagem = (f"Arquivo {nome} enviado e indexado com sucesso!" if indexado else
+                    f"Arquivo {nome} recebido, mas ainda n\u00e3o foi poss\u00edvel index\u00e1-lo. Verifique se o documento cont\u00e9m texto leg\u00edvel.")
+        return {"message": mensagem, "filename": nome, "folder_id": folder.id, "indexed": indexado}
+    finally:
+        if caminho and not streaming:
+            UPLOADS_EM_ANDAMENTO.discard(caminho)
+        await file.close()
+        db.close()
+
 
 def formatar_resultado_tabular_deterministico(resultado_bruto, pergunta: str) -> str | None:
     """Renderiza um DataFrame/Series com múltiplas linhas em Markdown, em Python puro
@@ -1064,11 +1123,30 @@ def montar_contexto_tabular(arquivo: str, resultado_analise: dict) -> str:
     if resultado_analise.get("sucesso"):
         return (f"Arquivo: {os.path.basename(arquivo)}\n"
                 f"Resultado validado: {resultado_analise.get('resultado')}")
-    return "A analise falhou. Nao ha resultado confiavel para esta pergunta."
+    return "A an\u00e1lise falhou. N\u00e3o h\u00e1 resultado confi\u00e1vel para esta pergunta."
 
 
 @app.post("/ask")
 async def answer(request_data: Ask, user=Depends(current_user)):
+    # Keep authentication/ownership failures as HTTP errors before starting a stream.
+    db = SessionLocal()
+    try:
+        db_user = db.query(User).filter_by(email=user).first()
+        if not db_user:
+            raise HTTPException(status_code=404, detail="Usu\u00e1rio n\u00e3o encontrado")
+        if request_data.conversationId and not request_data.mail:
+            conversation = db.query(Conversation).filter_by(id=request_data.conversationId, user_id=db_user.id).first()
+            if not conversation:
+                raise HTTPException(status_code=404, detail="Conversa n\u00e3o encontrada")
+    finally:
+        db.close()
+    return StreamingResponse(
+        transmitir_processamento(lambda: preparar_resposta(request_data, user)),
+        media_type="application/x-ndjson",
+        headers={"Cache-Control":"no-cache", "X-Accel-Buffering":"no"})
+
+
+async def preparar_resposta(request_data: Ask, user):
     db = SessionLocal()
     db_user = db.query(User).filter_by(email=user).first()
 
@@ -1105,6 +1183,25 @@ async def answer(request_data: Ask, user=Depends(current_user)):
 
     conversation_id = conversation.id if conversation else None
 
+    resposta_relogio = responder_relogio(request_data.texto)
+    if resposta_relogio is not None:
+        emitir_etapa("clock")
+        id_resposta = str(uuid.uuid4())
+        async def generate_clock():
+            try:
+                yield json.dumps({"type":"id", "id":id_resposta, "conversationId":conversation_id}) + "\n"
+                if memory_content:
+                    yield json.dumps({"type":"memory_saved", "content":memory_content}) + "\n"
+                yield json.dumps({"type":"content", "text":resposta_relogio, "id":id_resposta,
+                                  "fontes":[], "winner":[], "percent":{}, "conversationId":conversation_id}) + "\n"
+                if conversation_id:
+                    db.add(Message(conversation_id=conversation_id, role="ai", content=resposta_relogio))
+                    db.commit()
+            finally:
+                db.close()
+        return StreamingResponse(generate_clock(), media_type="application/x-ndjson",
+                                 headers={"Cache-Control":"no-cache", "X-Accel-Buffering":"no"})
+
     percentResult = 0
     max_fonts = 3
     context_parts = []
@@ -1113,14 +1210,10 @@ async def answer(request_data: Ask, user=Depends(current_user)):
     winnerFont = None
     MIN_GAP = 0.15
 
-    results = collection.query(
-        query_texts=[request_data.texto],
-        n_results=20,
-        include=["documents", "metadatas", "distances"]
-    )
-
-
+    emitir_etapa("permissions")
     accessible_ids = get_accessible_folder_ids(db, db_user)
+    emitir_etapa("search")
+    results = buscar_documentos_permitidos(collection, request_data.texto, accessible_ids)
 
     def is_allowed(meta):
         if accessible_ids is None: 
@@ -1179,6 +1272,7 @@ async def answer(request_data: Ask, user=Depends(current_user)):
 
         arquivo_tabular_direto = fonte_principal
         print(f"\n[TOOL FORÇADA — único arquivo tabular detectado]: {arquivo_tabular_direto}")
+        emitir_etapa("file", os.path.basename(arquivo_tabular_direto))
         resultado_analise = executar_analise_tabular(
             caminho_arquivo=arquivo_tabular_direto,
             pergunta=request_data.texto,
@@ -1190,7 +1284,7 @@ async def answer(request_data: Ask, user=Depends(current_user)):
         if resultado_analise.get("sucesso"):
             resposta_tabular_direta = formatar_resultado(dado_tabular_bruto) if dado_tabular_bruto is not None else resultado_analise["resultado"]
         else:
-            resposta_tabular_direta = "Nao foi possivel obter uma resposta confiavel neste arquivo."
+            resposta_tabular_direta = "N\u00e3o foi poss\u00edvel obter uma resposta confi\u00e1vel neste arquivo."
 
     rawScores = {}
     smlFonts = {}
@@ -1241,8 +1335,18 @@ async def answer(request_data: Ask, user=Depends(current_user)):
 
         context_parts = []
         for fonte in winnerFonts:
+            emitir_etapa("file", fonte)
             chunks = fonte_para_chunks.get(fonte, [])
             textos = "\n---\n".join(chunks)
+            # Small TXT sources fit in context and preserve complete factual sentences.
+            candidatos = [f for f in arquivos_unicos if os.path.basename(f) == fonte]
+            if len(candidatos) == 1 and candidatos[0].lower().endswith(".txt"):
+                try:
+                    if os.path.getsize(candidatos[0]) <= 14000:
+                        with open(candidatos[0], encoding="utf-8") as documento:
+                            textos = documento.read()
+                except (OSError, UnicodeError):
+                    pass
             context_parts.append(f"### {fonte}\n{textos}")
 
         contexto_rag = "\n\n".join(context_parts)
@@ -1283,6 +1387,7 @@ async def answer(request_data: Ask, user=Depends(current_user)):
 """
 
     prompt_sistema = f"""
+    {contexto_relogio()}
     Ao responder maior/menor, verifique TODOS os candidatos no contexto e mencione TODOS os empatados.
     Para cumprimentos, responda ao cumprimento sem consultar resultados antigos.
     Quando o usuario perguntar por que uma consulta falhou, explique que a consulta anterior
@@ -1383,6 +1488,7 @@ calculado com precisão via código Python real — não é uma estimativa nem u
             }) + "\n"
 
         if resposta_tabular_direta is not None:
+            emitir_etapa("formatting")
             yield json.dumps({"type": "content", "text": resposta_tabular_direta,
                               "id": id_resposta, "fontes": [os.path.basename(fonte_principal)],
                               "winner": [os.path.basename(fonte_principal)],
@@ -1394,6 +1500,23 @@ calculado com precisão via código Python real — não é uma estimativa nem u
             db.close()
             return
 
+        if (not tool_utilizada and winnerFonts and re.search(
+                r"percentual|porcentagem|percentagem|taxa|%", request_data.texto, re.IGNORECASE)):
+            # Validate before sending any answer: streaming cannot retract a wrong number.
+            emitir_etapa("percentage")
+            resposta_conferida = await asyncio.to_thread(
+                responder_percentual, request_data.texto, contexto, MODEL)
+            yield json.dumps({"type": "content", "text": resposta_conferida,
+                              "id": id_resposta, "fontes": fonts,
+                              "winner": winnerFonts, "percent": percents,
+                              "conversationId": conversation_id}) + "\n"
+            if conversation_id:
+                db.add(Message(conversation_id=conversation_id, role="ai", content=resposta_conferida))
+                db.commit()
+            db.close()
+            return
+
+        emitir_etapa("model")
         loop = asyncio.get_event_loop()
         stream = await loop.run_in_executor(
             None,
@@ -1407,6 +1530,7 @@ calculado com precisão via código Python real — não é uma estimativa nem u
         )
 
         final_response = ""
+        iniciou_texto = False
 
         if lista_determinada:
             
@@ -1416,6 +1540,9 @@ calculado com precisão via código Python real — não é uma estimativa nem u
 
             for chunk in stream:
                 content = chunk['message']['content']
+                if content and not iniciou_texto:
+                    emitir_etapa("generating")
+                    iniciou_texto = True
                 buffer += content
                 print(f"DEBUG: Conteúdo do chunk: {content}")
 
@@ -1469,6 +1596,9 @@ calculado com precisão via código Python real — não é uma estimativa nem u
         else:
             for chunk in stream:
                 content = chunk['message']['content']
+                if content and not iniciou_texto:
+                    emitir_etapa("generating")
+                    iniciou_texto = True
                 final_response += content
                 print(f"DEBUG: Conteúdo do chunk: {content}")
                 yield json.dumps({
@@ -1527,7 +1657,7 @@ if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
 
-# Comando para rodar o servidor | python -m uvicorn engine:app --host 0.0.0.0 --port 8000 --reload
+# Comando para rodar o servidor | 
 #  Comando para buildar o executável:
 """
 Gerar build para Windows:

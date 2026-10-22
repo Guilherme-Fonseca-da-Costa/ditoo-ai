@@ -88,3 +88,5 @@ websocket-client==1.9.0
 websockets==16.0
 zeroconf==0.148.0
 zipp==3.23.0
+# IANA time zones on Windows
+tzdata>=2024.1

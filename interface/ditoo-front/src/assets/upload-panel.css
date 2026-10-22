@@ -1,0 +1,66 @@
+.upload-overlay {
+  position: fixed; inset: 0; z-index: 1000;
+  display: grid; place-items: center;
+  padding: max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
+  background: rgba(0, 0, 0, .58); backdrop-filter: blur(5px);
+  overscroll-behavior: contain;
+}
+.document-upload {
+  box-sizing: border-box; width: min(100%, 600px); max-height: 90vh; max-height: 90dvh;
+  display: flex; flex-direction: column; min-width: 0; overflow: hidden;
+  color: var(--text); background: var(--surface); border: 1px solid var(--border);
+  border-radius: 18px; box-shadow: 0 20px 80px rgba(0, 0, 0, .35); outline: none;
+  font-size: 14px;
+}
+.document-upload *, .document-upload *::before, .document-upload *::after { box-sizing: border-box; }
+.document-upload-header { display: flex; gap: 16px; align-items: flex-start; justify-content: space-between; padding: 20px; flex-shrink: 0; border-bottom: 1px solid var(--border); }
+.document-upload-header h2 { margin: 0 0 5px; font-size: 19px; line-height: 1.3; }
+.document-upload-header p { margin: 0; color: var(--muted); font-size: 13px; }
+.document-upload-body { padding: 20px; min-height: 0; overflow-y: auto; overscroll-behavior: contain; display: flex; flex-direction: column; gap: 16px; }
+.upload-folder-label { display: flex; flex-direction: column; gap: 8px; font-size: 13px; font-weight: 500; }
+.upload-folder-label select { width: 100%; min-width: 0; font: inherit; font-size: 16px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface2); color: var(--text); }
+.upload-file-input { position: absolute; width: 1px; height: 1px; padding: 0; border: 0; clip-path: inset(50%); overflow: hidden; white-space: nowrap; }
+.upload-dropzone { width: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; min-height: 150px; padding: 20px 12px; border: 1px dashed var(--border); border-radius: 12px; background: var(--surface2); color: var(--text); cursor: pointer; font: inherit; }
+.upload-dropzone svg { color: var(--accent); }
+.upload-dropzone span, .upload-dropzone small { font-size: 12px; color: var(--muted); }
+.upload-dropzone.is-over, .upload-dropzone:hover:not(:disabled) { border-color: var(--accent); background: var(--accent-soft); }
+.upload-file-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.upload-file-list li { display: flex; align-items: center; gap: 10px; min-width: 0; background: var(--surface2); border: 1px solid var(--border); border-radius: 10px; padding: 10px; }
+.upload-file-list li > svg { flex-shrink: 0; color: var(--muted); }
+.upload-file-list li > div { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 3px; }
+.upload-file-list strong { font-size: 13px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.upload-file-list span { font-size: 12px; color: var(--muted); }
+.upload-icon-button { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 36px; height: 36px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--muted); cursor: pointer; }
+.upload-icon-button:hover:not(:disabled) { background: var(--surface2); color: var(--text); }
+.upload-status { background: var(--surface2); border: 1px solid var(--border); padding: 14px; border-radius: 12px; min-width: 0; }
+.upload-status-title { display: flex; align-items: center; gap: 8px; margin: 0; font-weight: 500; }
+.upload-current-name { margin: 5px 0 14px; overflow-wrap: anywhere; color: var(--muted); font-size: 12px; }
+.upload-progress-label { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 12px; margin-top: 10px; }
+.upload-status progress { display: block; width: 100%; height: 8px; margin-top: 7px; appearance: none; border: 0; border-radius: 8px; overflow: hidden; background: var(--border); accent-color: var(--accent); }
+.upload-status progress::-webkit-progress-bar { background: var(--border); border-radius: 8px; }
+.upload-status progress::-webkit-progress-value { background: var(--accent); border-radius: 8px; transition: width .2s; }
+.upload-status progress::-moz-progress-bar { background: var(--accent); border-radius: 8px; }
+.upload-status progress:indeterminate { background: linear-gradient(90deg, var(--border) 15%, var(--accent) 50%, var(--border) 85%); background-size: 200% 100%; animation: upload-pulse 1.4s linear infinite; }
+.upload-error { display: flex; align-items: flex-start; gap: 8px; margin: 0; font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; color: var(--text); }
+.upload-error svg { flex-shrink: 0; margin-top: 2px; color: #d89839; }
+.document-upload-footer { padding: 16px 20px; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-shrink: 0; border-top: 1px solid var(--border); background: var(--surface); }
+.document-upload-footer > span { font-size: 12px; color: var(--muted); }
+.document-upload-footer > div { display: flex; gap: 8px; flex-shrink: 0; }
+.upload-primary, .upload-secondary { border: 1px solid var(--border); border-radius: 9px; padding: 10px 14px; min-height: 42px; font: inherit; font-size: 13px; cursor: pointer; }
+.upload-primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+.upload-secondary { background: var(--surface2); color: var(--text); }
+.document-upload button:disabled { opacity: .55; cursor: default; }
+.document-upload button:focus-visible, .upload-folder-label select:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.upload-spinner { animation: upload-spin 1s linear infinite; }
+@keyframes upload-spin { to { transform: rotate(360deg); } }
+@keyframes upload-pulse { to { background-position: -200% 0; } }
+@media (max-width: 480px) {
+  .document-upload { max-height: 94vh; max-height: 94dvh; border-radius: 14px; }
+  .document-upload-header, .document-upload-body { padding: 16px; }
+  .document-upload-header h2 { font-size: 18px; }
+  .upload-dropzone { min-height: 125px; }
+  .document-upload-footer { display: flex; flex-direction: column; align-items: stretch; padding: 12px 16px; gap: 10px; }
+  .document-upload-footer > div { display: flex; width: 100%; }
+  .document-upload-footer button { flex: 1; }
+}
+@media (prefers-reduced-motion: reduce) { .upload-spinner, .upload-status progress:indeterminate { animation: none; } }
