@@ -25,7 +25,9 @@ export const api = {
       credentials: "include",
       body: JSON.stringify({ username, email, password: pass, role }),
     });
-    return res.json();
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || "Falha na solicita\u00e7\u00e3o.");
+    return data;
   },
 
   getMe: async (): Promise<{ email: string; username: string; role: string } | null> => {
@@ -47,7 +49,9 @@ export const api = {
       method: "GET",
       credentials: "include",
     });
-    return res.json();
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || "Falha na solicita\u00e7\u00e3o.");
+    return data;
   },
 
   upload: async (file: File) => {
@@ -73,7 +77,9 @@ export const api = {
       credentials: "include",
       body: JSON.stringify({ model }),
     });
-    return res.json();
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || "Falha na solicita\u00e7\u00e3o.");
+    return data;
   },
 
   getHistory: async () => {
@@ -89,7 +95,9 @@ export const api = {
       method: "GET",
       credentials: "include",
     });
-    return res.json();
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || "Falha na solicita\u00e7\u00e3o.");
+    return data;
   },
 
   async getConfig() {

@@ -1,3 +1,8 @@
+from typing import Literal
+from pathlib import Path
+import secrets
+import threading
+from sqlalchemy.exc import IntegrityError
 from database.db import Conversation, Folder, FolderAccess, Message, SessionLocal, User, UserMemory, engine
 from tools.code_executor import executar_analise_tabular, deve_analisar_tabela, formatar_resultado
 import pandas as pd
@@ -103,9 +108,9 @@ def get_dist_path():
     if getattr(sys, 'frozen', False):
         meipass = sys._MEIPASS
         dist = os.path.join(meipass, "dist")
-        print(f"DEBUG: _MEIPASS = {meipass}")
-        print(f"DEBUG: DIST_PATH = {dist}")
-        print(f"DEBUG: dist exists = {os.path.exists(dist)}")
+        pass  # Sensitive content is intentionally excluded from logs.
+        pass  # Sensitive content is intentionally excluded from logs.
+        pass  # Sensitive content is intentionally excluded from logs.
         return dist
     else:
         return os.path.join(os.path.dirname(os.path.abspath(__file__)), "dist")
@@ -165,6 +170,9 @@ def env_create():
         print("Arquivo .env criado com variáveis de ambiente padrão.")
 
 env_create()
+load_dotenv(ENV_PATH)
+COOKIE_SECURE = os.getenv("COOKIE_SECURE", "False").lower() == "true"
+REGISTRATION_LOCK = threading.Lock()
 
 from zeroconf.asyncio import AsyncZeroconf
 
@@ -220,6 +228,30 @@ def user_can_access_folder(db, db_user, folder) -> bool:
         folder_id=folder.id, user_id=db_user.id
     ).first()
     return access is not None
+
+def document_path(path: str, allow_root: bool = True) -> str:
+    root = Path(DOCS_PATH).resolve()
+    candidate = Path(path).resolve()
+    if not candidate.is_relative_to(root) or (candidate == root and not allow_root):
+        raise HTTPException(status_code=400, detail="Caminho fora da pasta de documentos.")
+    return str(candidate)
+
+
+def valid_document_name(name: str) -> bool:
+    if not name or name != name.strip() or name.endswith('.') or name in (".", ".."):
+        return False
+    if any(ord(c) < 32 or c in '<>:"/\\|?*' for c in name):
+        return False
+    stem = name.split('.')[0].upper()
+    return stem not in {"CON", "PRN", "AUX", "NUL", *(f"COM{i}" for i in range(1, 10)), *(f"LPT{i}" for i in range(1, 10))}
+
+
+def user_can_write_folder(db, db_user, folder) -> bool:
+    if db_user.role == "admin" or folder.user_id == db_user.id:
+        return True
+    access = db.query(FolderAccess).filter_by(folder_id=folder.id, user_id=db_user.id).first()
+    return access is not None and access.access_level == "write"
+
 
 def resolver_caminho_arquivo(fonte: str, folder_id: str, db) -> str | None:
     """Reconstrói o caminho absoluto de um arquivo a partir do nome salvo
@@ -295,13 +327,19 @@ def sync_folders(base_path: str, newFolder: str, parent_id: str, isPublic, user:
                     detail=f"Pasta pai não encontrada para o ID: {parent_id}"
                 )
 
-        newFolderPath = os.path.join(parent_folder.path, newFolder)
+        if not user_can_write_folder(db, db_user, parent_folder):
+            raise HTTPException(status_code=403, detail="Sem permiss\u00e3o para criar pastas aqui.")
+        if not valid_document_name(newFolder):
+            raise HTTPException(status_code=400, detail="Nome de pasta inv\u00e1lido.")
+        newFolderPath = document_path(os.path.join(parent_folder.path, newFolder), allow_root=False)
 
         if not os.path.exists(newFolderPath):
             os.makedirs(newFolderPath, exist_ok=True)
 
         existing_folder = db.query(Folder).filter_by(path=newFolderPath).first()
         if existing_folder:
+            if not user_can_write_folder(db, db_user, existing_folder):
+                raise HTTPException(status_code=403, detail="Sem permiss\u00e3o para esta pasta.")
             print(f"A pasta já existe no banco: {existing_folder.name} (ID: {existing_folder.id})")
             return existing_folder
 
@@ -580,7 +618,7 @@ class UserCreate(BaseModel):
     username: str
     email: str
     password: str
-    role: str
+    role: Literal["user", "admin"] = "user"
 
 class FolderCreate(BaseModel):
     name: str
@@ -590,7 +628,7 @@ class FolderCreate(BaseModel):
 class FolderAccessGrant(BaseModel):
     folderId: str
     userId: str
-    accessLevel: str = "read"
+    accessLevel: Literal["read", "write"] = "read"
 
 class UserLogin(BaseModel):
     email: str
@@ -607,7 +645,7 @@ security = HTTPBearer()
 
 def current_user(request: Request):
     token = request.cookies.get(COOKIE_NAME)
-    print(f"CURRENT: {token}")
+    pass  # Sensitive content is intentionally excluded from logs.
     if not token:
         raise HTTPException(status_code=401, detail="Token não fornecido")
     try:
@@ -631,6 +669,11 @@ def require_admin(db, user_email: str) -> User:
 
 @app.get("/getEmails")
 def getEmails(user: str = Depends(current_user)):
+    db = SessionLocal()
+    try:
+        require_admin(db, user)
+    finally:
+        db.close()
     return get_emails()
 
 
@@ -693,6 +736,7 @@ def delete_folder(folder_id: str, user: str = Depends(current_user)):
         if db_user.role != "admin" and folder.user_id != db_user.id:
             raise HTTPException(status_code=403, detail="Sem permissão para remover esta pasta")
 
+        safe_path = document_path(folder.path, allow_root=False)
         all_ids = collect_folder_ids_recursive(db, folder)
 
         db.query(FolderAccess).filter(FolderAccess.folder_id.in_(all_ids)).delete(synchronize_session=False)
@@ -703,7 +747,7 @@ def delete_folder(folder_id: str, user: str = Depends(current_user)):
             print(f"AVISO: falha ao remover embeddings da pasta {folder.id}: {e}")
 
         if os.path.exists(folder.path):
-            shutil.rmtree(folder.path)
+            shutil.rmtree(safe_path)
 
         db.delete(folder)
         db.commit()
@@ -878,18 +922,25 @@ def get_user_memories(user=Depends(current_user)):
         db.close()
 
 @app.post("/changeModel")
-def changeModel(model: Model):
+def changeModel(model: Model, user: str = Depends(current_user)):
     global MODEL
-    MODEL = model.model
-    
+    db = SessionLocal()
     try:
-        ollama.chat(model=MODEL, messages=[{"role": "user", "content": "ok"}], keep_alive=0)
-    except:
-        pass
-    
-    ollama.pull(model.model)  
-    
-    print(f"Modelo trocado para: {MODEL}")
+        require_admin(db, user)
+    finally:
+        db.close()
+    try:
+        installed = ollama.list()
+        entries = installed.models if hasattr(installed, "models") else installed.get("models", [])
+        names = {entry.model if hasattr(entry, "model") else entry.get("model", entry.get("name")) for entry in entries}
+        if model.model not in names:
+            raise HTTPException(status_code=400, detail="Selecione um modelo instalado no servidor.")
+        ollama.chat(model=model.model, messages=[{"role": "user", "content": "ok"}], keep_alive=0)
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=503, detail="N\u00e3o foi poss\u00edvel carregar o modelo.")
+    MODEL = model.model
     return {"message": f"Modelo trocado para {MODEL}"}
 
 @app.get("/fetchMessages/{conversation_id}")
@@ -900,6 +951,9 @@ async def fetch_messages(conversation_id: str, user=Depends(current_user)):
         if not db_user:
             raise HTTPException(status_code=404, detail="Usuário não encontrado")
 
+        conversation = db.query(Conversation).filter_by(id=conversation_id, user_id=db_user.id).first()
+        if not conversation:
+            raise HTTPException(status_code=404, detail="Conversa n\u00e3o encontrada.")
         messages = (
             db.query(Message)
             .filter_by(conversation_id=conversation_id)
@@ -907,7 +961,7 @@ async def fetch_messages(conversation_id: str, user=Depends(current_user)):
             .all()
         )
         
-        print("Mensagens" + str([m.content for m in messages]))
+        pass  # Sensitive content is intentionally excluded from logs.
         return [
             {"id": m.id, "sender": m.role, "text": m.content}
             for m in messages
@@ -938,61 +992,69 @@ async def get_conversations(user=Depends(current_user)):
         db.close()
 
 @app.post("/register")
-def register(user: UserCreate):
-    db = SessionLocal()
-    if db.query(User).filter_by(username=user.username).first():
-        raise HTTPException(status_code=400, detail="Usuário já existe")
-    
-    novo_user = User(
-        username=user.username,
-        email=user.email,
-        password=pwd_context.hash(user.password),
-        role=user.role
-    )
-    db.add(novo_user)
-    db.commit()
-    return {"message": "Usuário criado!"}
+def register(user: UserCreate, request: Request):
+    with REGISTRATION_LOCK:
+        db = SessionLocal()
+        try:
+            if db.query(User).first() is None:
+                expected = os.getenv("DITOO_BOOTSTRAP_TOKEN", "")
+                supplied = request.headers.get("X-Bootstrap-Token", "")
+                if not expected or not secrets.compare_digest(supplied, expected):
+                    raise HTTPException(status_code=403, detail="Configure o token de cadastro inicial no servidor.")
+                role = "admin"
+            else:
+                require_admin(db, current_user(request))
+                role = user.role
+            if db.query(User).filter_by(username=user.username).first() or db.query(User).filter_by(email=user.email).first():
+                raise HTTPException(status_code=409, detail="Nome de usu\u00e1rio ou e-mail j\u00e1 cadastrado.")
+            if not user.username.strip() or "@" not in user.email or not user.password:
+                raise HTTPException(status_code=422, detail="Dados de cadastro inv\u00e1lidos.")
+            db.add(User(username=user.username, email=user.email, password=pwd_context.hash(user.password), role=role))
+            db.commit()
+            return {"message": "Usu\u00e1rio criado!"}
+        except IntegrityError:
+            db.rollback()
+            raise HTTPException(status_code=409, detail="Cadastro j\u00e1 existente.")
+        finally:
+            db.close()
 
 @app.get("/getUsers")
 async def getUsers(user=Depends(current_user)):
     db = SessionLocal()
-    db_users = db.query(User).all()
-    
-    return [
-        {
-            "id": u.id,
-            "username": u.username,
-            "email": u.email,
-            "role": u.role
-        }
-        for u in db_users
-    ]
+    try:
+        require_admin(db, user)
+        return [{"id": u.id, "username": u.username, "email": u.email, "role": u.role} for u in db.query(User).all()]
+    finally:
+        db.close()
 @app.post("/loginUser")
 async def login(user: UserLogin, response: Response):
-    print(f"Usuário: {user}")
+    pass  # Sensitive content is intentionally excluded from logs.
     db = SessionLocal()
-    db_user = db.query(User).filter_by(email=user.email).first()
-    
-    if not db_user or not pwd_context.verify(user.password, db_user.password):
-        raise HTTPException(status_code=401, detail="Credenciais inválidas")
-    
-    token = jwt.encode({
-        "user": db_user.username,
-        "sub": db_user.email,
-        "exp": datetime.datetime.utcnow() + datetime.timedelta(hours=8),
-        "role": db_user.role
-    }, SECRET_KEY, algorithm="HS256")
-    
-    response.set_cookie(
-        key=COOKIE_NAME,
-        value=token,
-        httponly=True,
-        secure=COOKIE_SECURE,
-        samesite="lax",
-        max_age=8 * 3600,
-        path="/"
-    )
-    return {"message": "Login realizado", "username": db_user.username, "role": db_user.role}
+    try:
+        db_user = db.query(User).filter_by(email=user.email).first()
+        
+        if not db_user or not pwd_context.verify(user.password, db_user.password):
+            raise HTTPException(status_code=401, detail="Credenciais inválidas")
+        
+        token = jwt.encode({
+            "user": db_user.username,
+            "sub": db_user.email,
+            "exp": datetime.datetime.utcnow() + datetime.timedelta(hours=8),
+            "role": db_user.role
+        }, SECRET_KEY, algorithm="HS256")
+        
+        response.set_cookie(
+            key=COOKIE_NAME,
+            value=token,
+            httponly=True,
+            secure=COOKIE_SECURE,
+            samesite="lax",
+            max_age=8 * 3600,
+            path="/"
+        )
+        return {"message": "Login realizado", "username": db_user.username, "role": db_user.role}
+    finally:
+        db.close()
 
 @app.post("/logout")
 def logout(response: Response):
@@ -1014,15 +1076,44 @@ async def me(user: str = Depends(current_user)):
 
 @app.post("/upload")
 async def upload_file(file: UploadFile = File(...), user=Depends(current_user)):
-    pasta_destino = os.path.join(DOCS_PATH, "root")
-    os.makedirs(pasta_destino, exist_ok=True)
-    end = os.path.join(pasta_destino, file.filename)
-    
-    with open(end, "wb") as f:
-        shutil.copyfileobj(file.file, f)
-    
-    print(f"Arquivo recebido: {file.filename}")
-    return {"message": f"Arquivo {file.filename} enviado com sucesso!"}
+    db = SessionLocal()
+    temporary = None
+    try:
+        db_user = db.query(User).filter_by(email=user).first()
+        if not db_user:
+            raise HTTPException(status_code=404, detail="Usu\u00e1rio n\u00e3o encontrado.")
+        folder = get_folder_for_path(db, os.path.join(DOCS_PATH, "root"))
+        if not user_can_write_folder(db, db_user, folder):
+            raise HTTPException(status_code=403, detail="Sem permiss\u00e3o para enviar arquivos a esta pasta.")
+        name = file.filename or ""
+        if not valid_document_name(name):
+            raise HTTPException(status_code=400, detail="Nome de arquivo inv\u00e1lido.")
+        if Path(name).suffix.lower() not in {".pdf", ".txt", ".csv", ".xlsx"}:
+            raise HTTPException(status_code=400, detail="Formato de arquivo n\u00e3o suportado.")
+        destination = document_path(os.path.join(folder.path, name), allow_root=False)
+        os.makedirs(folder.path, exist_ok=True)
+        temporary = document_path(os.path.join(folder.path, f".upload-{uuid.uuid4().hex}"), allow_root=False)
+        limit = int(os.getenv("DITOO_MAX_UPLOAD_BYTES", str(50 * 1024 * 1024)))
+        size = 0
+        with open(temporary, "xb") as output:
+            while chunk := await file.read(1024 * 1024):
+                size += len(chunk)
+                if size > limit:
+                    raise HTTPException(status_code=413, detail="Arquivo excede o limite de upload.")
+                output.write(chunk)
+        if not size:
+            raise HTTPException(status_code=400, detail="Arquivo vazio.")
+        # Publish the complete file atomically; hard links never replace an existing name.
+        try:
+            os.link(temporary, destination)
+        except FileExistsError:
+            raise HTTPException(status_code=409, detail="J\u00e1 existe um arquivo com este nome.")
+        return {"message": f"Arquivo {name} enviado com sucesso!"}
+    finally:
+        if temporary and os.path.exists(temporary):
+            os.unlink(temporary)
+        await file.close()
+        db.close()
 
 def formatar_resultado_tabular_deterministico(resultado_bruto, pergunta: str) -> str | None:
     """Renderiza um DataFrame/Series com múltiplas linhas em Markdown, em Python puro
@@ -1089,7 +1180,7 @@ async def answer(request_data: Ask, user=Depends(current_user)):
             db.refresh(conversation)
 
         history = db.query(Message).filter_by(conversation_id=conversation.id).order_by(Message.created_at.desc()).all()
-        print(f"DEBUG: Histórico de mensagens Inicial: {[{'role': m.role, 'content': m.content} for m in history]}")
+        pass  # Sensitive content is intentionally excluded from logs.
         MAX_HISTORY = 15
         memory = history[:MAX_HISTORY]
         memory.reverse() 
@@ -1101,7 +1192,7 @@ async def answer(request_data: Ask, user=Depends(current_user)):
         if memory_content:
             db.add(UserMemory(user_id=db_user.id, content=memory_content))
             db.commit()
-            print(f"DEBUG: Memória salva: {memory_content}")
+            pass  # Sensitive content is intentionally excluded from logs.
 
     conversation_id = conversation.id if conversation else None
 
@@ -1206,7 +1297,7 @@ async def answer(request_data: Ask, user=Depends(current_user)):
                 smlFonts[archive] = slm
 
         fonts = [meta['fonte'] for meta in results["metadatas"][0]]
-        print(f"DEBUG: Similaridade por fonte: {smlFonts}")
+        pass  # Sensitive content is intentionally excluded from logs.
 
     if not smlFonts:
         winnerFonts = []
@@ -1228,7 +1319,7 @@ async def answer(request_data: Ask, user=Depends(current_user)):
             fonte: round(smlFonts[fonte] * 100)
             for fonte in winnerFonts
         }
-        print(f"DEBUG: Fontes vencedoras ({MIN_GAP}): {winnerFonts}")
+        pass  # Sensitive content is intentionally excluded from logs.
 
     contexto_tool = contexto if tool_utilizada else ""
 
@@ -1260,7 +1351,7 @@ async def answer(request_data: Ask, user=Depends(current_user)):
         else {"temperature": 0, "repeat_penalty": 1.1}
 )
 
-    print(f"Contexto final enviado ao modelo: {contexto}")
+    pass  # Sensitive content is intentionally excluded from logs.
     user_memories = db.query(UserMemory).filter_by(user_id=db_user.id).all()
     memoria_permanente = ""
     if user_memories:
@@ -1367,9 +1458,9 @@ calculado com precisão via código Python real — não é uma estimativa nem u
 
     async def generate():
         print(f"id_resposta:{id_resposta}")
-        print(f"DEBUG: Prompt do sistema: {prompt_sistema}")
-        print(f"DEBUG: Memória: {memory}")
-        print(f"DEBUG: Histórico de mensagens: {messages}")
+        pass  # Sensitive content is intentionally excluded from logs.
+        pass  # Sensitive content is intentionally excluded from logs.
+        pass  # Sensitive content is intentionally excluded from logs.
         yield json.dumps({
             "type": "id",
             "id": id_resposta,
@@ -1417,7 +1508,7 @@ calculado com precisão via código Python real — não é uma estimativa nem u
             for chunk in stream:
                 content = chunk['message']['content']
                 buffer += content
-                print(f"DEBUG: Conteúdo do chunk: {content}")
+                pass  # Sensitive content is intentionally excluded from logs.
 
                 match = padrao_inicio_lista.search(buffer)
                 if match:
@@ -1435,7 +1526,7 @@ calculado com precisão via código Python real — não é uma estimativa nem u
                             "percent": percents,
                             "conversationId": conversation_id
                         }) + "\n"
-                    print("DEBUG: Lista do próprio LLM detectada e descartada — usando a determinística")
+                    pass  # Sensitive content is intentionally excluded from logs.
                     break  
                 seguro_ate = max(0, len(buffer) - 30)
                 trecho_novo = buffer[len(enviado):seguro_ate]
@@ -1470,7 +1561,7 @@ calculado com precisão via código Python real — não é uma estimativa nem u
             for chunk in stream:
                 content = chunk['message']['content']
                 final_response += content
-                print(f"DEBUG: Conteúdo do chunk: {content}")
+                pass  # Sensitive content is intentionally excluded from logs.
                 yield json.dumps({
                     "type": "content",
                     "text": content,
@@ -1485,7 +1576,7 @@ calculado com precisão via código Python real — não é uma estimativa nem u
         if lista_determinada:
             bloco_lista = f"\n\n{lista_determinada}"
             final_response += bloco_lista
-            print(f"DEBUG: Lista determinística anexada:\n{bloco_lista}")
+            pass  # Sensitive content is intentionally excluded from logs.
             yield json.dumps({
                 "type": "content",
                 "text": bloco_lista,
