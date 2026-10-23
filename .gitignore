@@ -3,7 +3,9 @@ engine/database/ditoo.db
 engine/ditoo.db
 engine/dist
 engine/build
+engine/tests
 engine/ditoo-server.spec
+interface/ditoo-front/tests
 venv/
 .venv/
 env/
@@ -19,3 +21,37 @@ Thumbs.db
 .env
 .pytest_cache/
 .coverage
+
+# Local tests, evaluations and generated reports (keep files on disk)
+**/tests/
+**/__tests__/
+test_*.py
+*.test.js
+*.test.jsx
+*.test.ts
+*.test.tsx
+*.spec.js
+*.spec.jsx
+*.spec.ts
+*.spec.tsx
+/avaliacoes/
+/docs/
+/output/
+/tmp/
+/temp/
+coverage/
+htmlcov/
+.nyc_output/
+*.tsbuildinfo
+
+# Local dependencies, caches and runtime data
+node_modules/
+.ruff_cache/
+.mypy_cache/
+*.db-journal
+*.db-wal
+*.db-shm
+/engine/logs/
+
+# Original font download archives; extracted runtime fonts remain tracked
+/interface/ditoo-front/src/assets/*.zip
