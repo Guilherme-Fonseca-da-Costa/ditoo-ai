@@ -1,6 +1,9 @@
 import { uploadWithProgress } from "../utils/uploadTransport";
+import { loadSetupStatus, createInitialAdmin } from "../utils/setupTransport";
 
 export const api = {
+  getSetupStatus: loadSetupStatus,
+  createInitialAdmin,
   login: async (email: string, pass: string) => {
     const res = await fetch("/loginUser", {
       method: "POST",
@@ -10,6 +13,7 @@ export const api = {
     });
 
     if (res.status === 401) return { error: "Usuário ou senha incorretos" };
+    if (!res.ok) return { error: "Não foi possível entrar. Tente novamente." };
 
     const data = await res.json();
     return data; 
@@ -27,7 +31,9 @@ export const api = {
       credentials: "include",
       body: JSON.stringify({ username, email, password: pass, role }),
     });
-    return res.json();
+    const data = await res.json();
+    if (!res.ok) throw new Error(typeof data.detail === "string" ? data.detail : "Falha na solicita\u00e7\u00e3o.");
+    return data;
   },
 
   getMe: async (): Promise<{ email: string; username: string; role: string } | null> => {
@@ -53,7 +59,9 @@ export const api = {
       method: "GET",
       credentials: "include",
     });
-    return res.json();
+    const data = await res.json();
+    if (!res.ok) throw new Error(typeof data.detail === "string" ? data.detail : "Falha na solicita\u00e7\u00e3o.");
+    return data;
   },
 
   upload: uploadWithProgress,
@@ -65,7 +73,9 @@ export const api = {
       credentials: "include",
       body: JSON.stringify({ model }),
     });
-    return res.json();
+    const data = await res.json();
+    if (!res.ok) throw new Error(typeof data.detail === "string" ? data.detail : "Falha na solicita\u00e7\u00e3o.");
+    return data;
   },
 
   getHistory: async () => {
@@ -81,7 +91,9 @@ export const api = {
       method: "GET",
       credentials: "include",
     });
-    return res.json();
+    const data = await res.json();
+    if (!res.ok) throw new Error(typeof data.detail === "string" ? data.detail : "Falha na solicita\u00e7\u00e3o.");
+    return data;
   },
 
   async getConfig() {
@@ -135,8 +147,9 @@ export const api = {
       credentials: "include",
       body: JSON.stringify({ name, parentId, isPublic }),
     });
-    if (!res.ok) throw new Error("Erro ao criar pasta");
-    return res.json();
+    const data = await res.json();
+    if (!res.ok) throw new Error(typeof data.detail === "string" ? data.detail : "Erro ao criar pasta.");
+    return data;
   },
 
   async deleteFolder(id: string) {
@@ -144,8 +157,9 @@ export const api = {
       method: "DELETE",
       credentials: "include",
     });
-    if (!res.ok) throw new Error("Erro ao remover pasta");
-    return res.json();
+    const data = await res.json();
+    if (!res.ok) throw new Error(typeof data.detail === "string" ? data.detail : "Erro ao remover pasta.");
+    return data;
   },
 
   async getFolderAccess(folderId: string) {
@@ -190,15 +204,4 @@ export const api = {
     return res.json();
   },
 
-  async getEmails() {
-    const res = await fetch("/getEmails", {
-      method: "GET",
-      credentials: "include",
-    });
-    if (!res.ok) throw new Error("Erro ao buscar emails");
-    const data = await res.json();
-
-  // Garante que o frontend sempre receba um array
-  return Array.isArray(data.emails) ? data.emails : [];
-  },
 };

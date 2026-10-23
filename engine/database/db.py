@@ -1,4 +1,5 @@
 import os
+from tools.settings import database_url, load_environment
 import uuid
 
 from pydantic import BaseModel
@@ -16,7 +17,8 @@ def utcnow() -> datetime.datetime:
     return datetime.datetime.now(datetime.timezone.utc)
 
 
-engine = create_engine('sqlite:///./ditoo.db')
+load_environment()
+engine = create_engine(database_url())
 SessionLocal = sessionmaker(bind=engine)
 Base = declarative_base()
 
@@ -30,6 +32,18 @@ class User(Base):
     role = Column(String)
     conversations = relationship("Conversation", back_populates="user", cascade="all")
     memories = relationship("UserMemory", back_populates="user", cascade="all, delete-orphan")
+
+
+# Estado único da instalação. Não contém senha ou token em texto aberto.
+class InitialSetupState(Base):
+    __tablename__ = 'initial_setup_state'
+    __table_args__ = {"mysql_engine": "InnoDB"}
+    id = Column(String, primary_key=True)
+    completed = Column(Boolean, nullable=False, default=False)
+    token_hash = Column(String, nullable=True)
+    expires_at = Column(Integer, nullable=True)
+    failures = Column(Integer, nullable=False, default=0)
+    window_started_at = Column(Integer, nullable=False, default=0)
 
 
 # Configurações específicas do usuário
@@ -104,25 +118,3 @@ class FolderAccess(Base):
     created_at = Column(DateTime, default=utcnow)
 
 Base.metadata.create_all(bind=engine)
-# Insert de teste no SQLITE
-"""
-db = SessionLocal()
-new_user = User(username="John Doe", email="john@example.com", password="password123")
-db.add(new_user)
-db.commit()
-db.refresh(new_user)
-print(f"User created: {new_user.username} with email {new_user.email}") 
-
-"""
-
-# Consulta de teste no SQLITE
-"""
-db = SessionLocal()
-users = db.query(User).filter(User.email == "john@example.com").all()
-print(f"Users in database: {[user.name for user in users]}")
-"""
-
-"""
-Gerar usuário admin para teste:
-curl -X POST http://localhost:8000/register   -H "Content-Type: application/json"   -d "{\"username\": \"Master\", \"email\": \"master@gmail.com\", \"password\": \"123\", \"role\": \"admin\"}"
-"""

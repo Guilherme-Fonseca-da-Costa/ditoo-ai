@@ -204,10 +204,6 @@ const Icons = {
 
 // ─── Constantes (mockups) ────
 
-const CONST_USERS = [
-  { id: 1, name: "John Doe", email: "john.doe@empresa.com", role: "admin" },
-];
-
 const MODELS = [
   { value: "qwen2.5:7b", label: "Qwen 2.5 7B", tag: "Recomendado" },
   { value: "deepseek-r1:8b", label: "DeepSeek R1 8B", tag: "Preciso" },
@@ -421,7 +417,8 @@ function SystemSettings() {
   const isAdmin = user?.role === "admin";
   const [model, setModel] = useState("qwen2.5:7b");
   const [parallelReqs, setParallel] = useState(3);
-  const [, setUsers] = useState(CONST_USERS);
+  const [userError, setUserError] = useState<string | null>(null);
+  const [creatingUser, setCreatingUser] = useState(false);
   const [dataUsers, setDataUsers] = useState<AppUser[]>();
   const [newUser, setNewUser] = useState({
     name: "",
@@ -431,34 +428,31 @@ function SystemSettings() {
   });
 
   
-  function removeUser(id: number) {
-    setUsers((u) => u.filter((x) => x.id !== id));
-  }
-
-  function createUser() {
-    if (!newUser.name || !newUser.email) return;
-    setUsers((prev) => [
-      ...prev,
-      {
-        id: Date.now(),
-        name: newUser.name,
-        email: newUser.email,
-        role: newUser.role as "admin" | "user",
-      },
-    ]);
-    setNewUser({ name: "", email: "", password: "", role: "user" });
-
-    api.register(newUser.name, newUser.email, newUser.password, newUser.role);
+  async function createUser() {
+    if (!newUser.name.trim() || !newUser.email.trim() || !newUser.password || creatingUser) return;
+    setCreatingUser(true);
+    setUserError(null);
+    try {
+      await api.register(newUser.name, newUser.email, newUser.password, newUser.role);
+      setNewUser({ name: "", email: "", password: "", role: "user" });
+      setDataUsers(await api.getUsers());
+    } catch (error) {
+      setUserError(error instanceof Error ? error.message : "Falha ao criar o usu\u00e1rio.");
+    } finally {
+      setCreatingUser(false);
+    }
   }
 
   useEffect(() => {
-    const fetchUsers = async () => {
-      const users = await api.getUsers();
-      console.log(users);
-      setDataUsers(users);
-    };
-    fetchUsers();
-  }, []);
+    if (!isAdmin) return;
+    let active = true;
+    api.getUsers().then((users) => {
+      if (active) setDataUsers(users);
+    }).catch((error: unknown) => {
+      if (active) setUserError(error instanceof Error ? error.message : "Falha ao buscar usu\u00e1rios.");
+    });
+    return () => { active = false; };
+  }, [isAdmin]);
 
   return (
     <>
@@ -569,7 +563,8 @@ function SystemSettings() {
                     <button
                       className="cfg-icon-btn danger"
                       title="Excluir"
-                      onClick={() => removeUser(u.id)}
+                      disabled
+                      aria-label={"Exclus\u00e3o de usu\u00e1rios indispon\u00edvel"}
                     >
                       <Icons.Trash />
                     </button>
@@ -623,7 +618,8 @@ function SystemSettings() {
               </select>
             </div>
             <div className="cfg-row-action">
-              <button className="cfg-btn-primary" onClick={createUser}>
+              {userError && <p className="cfg-warning" role="alert">{userError}</p>}
+              <button className="cfg-btn-primary" onClick={createUser} disabled={creatingUser}>
                 <Icons.Plus /> Criar usuário
               </button>
             </div>
@@ -769,7 +765,10 @@ type Folder = {
   id: string;
   name: string;
   parent_id: string | null;
-  isPublic: boolean
+  isPublic: boolean;
+  can_write?: boolean;
+  can_create_subfolder?: boolean;
+  can_delete?: boolean;
   path: string;
 };
 
@@ -939,6 +938,9 @@ function FolderAccessPanel({ folder }: { folder: Folder }) {
 
 
 function FoldersSettings() {
+  const { user } = useCurrentUser();
+  const isAdmin = user?.role === "admin";
+  const [folderError, setFolderError] = useState<string | null>(null);
   const [folders, setFolders] = useState<Folder[]>([]);
   const [loadingFolders, setLoadingFolders] = useState(true);
   const [showAddForm, setShowAddForm] = useState(false);
@@ -948,7 +950,7 @@ function FoldersSettings() {
   const [newFolder, setNewFolder] = useState({
     name: "",
     parentId: "",
-    isPublic: "",
+    isPublic: "false",
   });
   const [creating, setCreating] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -959,7 +961,7 @@ function FoldersSettings() {
         const data = await api.getFolders();
         setFolders(data);
       } catch (err) {
-        console.error("Erro ao carregar pastas:", err);
+        setFolderError(err instanceof Error ? err.message : "Erro ao carregar pastas.");
       } finally {
         setLoadingFolders(false);
       }
@@ -970,17 +972,18 @@ function FoldersSettings() {
   async function createFolder() {
     if (!newFolder.name.trim()) return;
     setCreating(true);
+    setFolderError(null);
     try {
-      const created = await api.createFolder(
+      await api.createFolder(
         newFolder.name,
         newFolder.parentId,
         newFolder.isPublic || ""
       );
-      setFolders((prev) => [...prev, created]);
-      setNewFolder({ name: "", parentId: "", isPublic: "" });
+      setFolders(await api.getFolders());
+      setNewFolder({ name: "", parentId: "", isPublic: "false" });
       setShowAddForm(false);
     } catch (err) {
-      console.error("Erro ao criar pasta:", err);
+      setFolderError(err instanceof Error ? err.message : "Erro ao criar pasta.");
     } finally {
       setCreating(false);
     }
@@ -988,12 +991,13 @@ function FoldersSettings() {
 
   async function removeFolder(id: string) {
     setDeletingId(id);
+    setFolderError(null);
     try {
       await api.deleteFolder(id);
       setFolders((prev) => prev.filter((f) => f.id !== id));
       if (expandedFolderId === id) setExpandedFolderId(null);
     } catch (err) {
-      console.error("Erro ao remover pasta:", err);
+      setFolderError(err instanceof Error ? err.message : "Erro ao remover pasta.");
     } finally {
       setDeletingId(null);
     }
@@ -1006,6 +1010,7 @@ function FoldersSettings() {
         desc="Gerencie onde o Ditoo busca e indexa seus arquivos."
       />
 
+      {folderError && <p className="cfg-warning" role="alert">{folderError}</p>}
       <div className="cfg-card">
         {loadingFolders ? (
           <p className="cfg-empty-msg">Carregando pastas...</p>
@@ -1031,7 +1036,7 @@ function FoldersSettings() {
                     {f.isPublic === false ? "Secreta" : "Pública"}
                   </span>
                   <div className="cfg-folder-actions">
-                    {f.isPublic === false && (
+                    {isAdmin && f.isPublic === false && (
                       <button
                         className="cfg-icon-btn"
                         title="Gerenciar permissões"
@@ -1047,18 +1052,18 @@ function FoldersSettings() {
                     <button className="cfg-icon-btn" title="Editar">
                       <Icons.Edit />
                     </button>
-                    <button
+                    {(f.can_delete ?? isAdmin) && <button
                       className="cfg-icon-btn danger"
                       title="Remover"
                       onClick={() => removeFolder(f.id)}
                       disabled={deletingId === f.id}
                     >
                       <Icons.Trash />
-                    </button>
+                    </button>}
                   </div>
                 </div>
 
-                {f.isPublic === false && expandedFolderId === f.id && (
+                {isAdmin && f.isPublic === false && expandedFolderId === f.id && (
                   <FolderAccessPanel folder={f} />
                 )}
               </div>
@@ -1088,7 +1093,7 @@ function FoldersSettings() {
                 }
               >
                 <option value="">Pasta raiz (sem pai)</option>
-                {folders.map((f) => (
+                {folders.filter((f) => f.can_create_subfolder ?? (isAdmin || f.isPublic || f.can_write)).map((f) => (
                   <option key={f.id} value={f.id}>
                     {f.name}
                   </option>
@@ -1110,7 +1115,7 @@ function FoldersSettings() {
                 className="cfg-btn-ghost"
                 onClick={() => {
                   setShowAddForm(false);
-                  setNewFolder({ name: "", parentId: "", isPublic: "" });
+                  setNewFolder({ name: "", parentId: "", isPublic: "false" });
                 }}
               >
                 Cancelar

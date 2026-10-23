@@ -1,6 +1,5 @@
 """Validate filenames and publish complete uploads atomically."""
 import os
-import shutil
 import tempfile
 from fastapi import HTTPException
 
@@ -11,22 +10,35 @@ def nome_upload(filename):
     nome = (filename or "").replace("\\", "/").rsplit("/", 1)[-1].strip()
     if not nome or nome in {".", ".."} or any(c in nome for c in '<>:"|?*') or any(ord(c) < 32 for c in nome) or nome.endswith("."):
         raise HTTPException(status_code=400, detail="Nome de arquivo inv\u00e1lido.")
+    stem = nome.split('.')[0].upper()
+    if stem in {"CON", "PRN", "AUX", "NUL", *(f"COM{i}" for i in range(1, 10)), *(f"LPT{i}" for i in range(1, 10))}:
+        raise HTTPException(status_code=400, detail="Nome de arquivo inv\u00e1lido.")
     if os.path.splitext(nome)[1].lower() not in SUPPORTED_EXTENSIONS:
         raise HTTPException(status_code=400, detail="Formato n\u00e3o suportado. Envie PDF, TXT, CSV ou XLSX.")
     return nome
 
 
 def salvar_upload(stream, pasta, nome):
+    nome = nome_upload(nome)
+    limite = int(os.getenv("DITOO_MAX_UPLOAD_BYTES", str(50 * 1024 * 1024)))
     os.makedirs(pasta, exist_ok=True)
     temporario = None
     try:
         with tempfile.NamedTemporaryFile(dir=pasta, suffix=".upload", delete=False) as destino:
             temporario = destino.name
-            shutil.copyfileobj(stream, destino)
+            total = 0
+            while bloco := stream.read(1024 * 1024):
+                total += len(bloco)
+                if total > limite:
+                    raise HTTPException(status_code=413, detail="O arquivo excede o limite de upload.")
+                destino.write(bloco)
         if os.path.getsize(temporario) == 0:
             raise HTTPException(status_code=400, detail="O arquivo enviado est\u00e1 vazio.")
         caminho = os.path.join(pasta, nome)
-        os.replace(temporario, caminho)
+        try:
+            os.link(temporario, caminho)
+        except FileExistsError:
+            raise HTTPException(status_code=409, detail="J\u00e1 existe um arquivo com este nome nesta pasta.")
         return caminho
     finally:
         if temporario and os.path.exists(temporario):

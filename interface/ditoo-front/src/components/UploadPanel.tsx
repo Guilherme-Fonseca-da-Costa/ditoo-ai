@@ -5,7 +5,7 @@ import { api } from "../services/api";
 import type { UploadProgress } from "../utils/uploadTransport";
 import "../assets/upload-panel.css";
 
-type Folder = { id: string; name: string };
+type Folder = { id: string; name: string; can_write?: boolean };
 type Props = { onClose: () => void; onUploadSuccess: (message: string, type?: "success" | "error" | "info") => void };
 
 export default function UploadPanel({ onClose, onUploadSuccess }: Props) {
@@ -30,7 +30,16 @@ export default function UploadPanel({ onClose, onUploadSuccess }: Props) {
 
   useEffect(() => {
     let alive = true;
-    api.getFolders().then(data => { if (alive) setFolders(data); }).catch(() => {
+    api.getFolders().then(data => {
+      if (!alive) return;
+      const writable: Folder[] = data.filter((folder: Folder) => folder.can_write !== false);
+      setFolders(writable);
+      setSelectedFolder(writable.find(folder => folder.name === "root")?.id ?? writable[0]?.id ?? "");
+      if (!writable.length) {
+        setFolderError(true);
+        setUploadError("Voc\u00ea n\u00e3o tem permiss\u00e3o de escrita em nenhuma pasta. Solicite acesso ao administrador.");
+      }
+    }).catch(() => {
       if (alive) { setFolderError(true); setUploadError("Não foi possível carregar as pastas. Feche e reabra este painel."); }
     }).finally(() => { if (alive) setLoadingFolders(false); });
     return () => { alive = false; };
@@ -106,7 +115,7 @@ export default function UploadPanel({ onClose, onUploadSuccess }: Props) {
             onChange={event => { event.stopPropagation(); addFiles(Array.from(event.currentTarget.files ?? [])); event.currentTarget.value = ""; }} />
           <button type="button" className={`upload-dropzone ${over ? "is-over" : ""}`} disabled={sending}
             onClick={() => inputRef.current?.click()} onDragOver={event => { event.preventDefault(); setOver(true); }} onDragLeave={() => setOver(false)} onDrop={drop}>
-            <Upload size={28} /><strong>Escolher arquivos</strong><span>Toque para selecionar ou arraste para cá.</span><small>PDF, TXT, CSV e XLSX</small>
+            <Upload size={28} /><strong>Escolher arquivos</strong><span>Selecione os arquivos ou arraste para cá.</span><small>PDF, TXT, CSV e XLSX</small>
           </button>
           {files.length > 0 && <ul className="upload-file-list" aria-label="Arquivos selecionados">{files.map((file, index) => <li key={`${file.name}-${file.size}-${index}`}>
             <FileText size={20} aria-hidden="true" /><div><strong title={file.name}>{file.name}</strong><span>{file.size < 1048576 ? `${(file.size / 1024).toFixed(1)} KB` : `${(file.size / 1048576).toFixed(1)} MB`}</span></div>

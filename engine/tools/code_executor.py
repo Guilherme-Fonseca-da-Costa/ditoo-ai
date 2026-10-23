@@ -361,14 +361,14 @@ def executar_analise_tabular(
         try:
             emitir_etapa("retry" if tentativa > 1 else "code_generation")
             resultado = qf.ask(df, pergunta_atual)
-            print(f"[TENTATIVA {tentativa} — código gerado]:\n{resultado.code}")
-            print(f"[TENTATIVA {tentativa} — resultado obtido]:\n{resultado.data}")
+            pass  # Keep document data and generated code out of console logs.
+            pass  # Keep document data and generated code out of console logs.
 
             # 1) Checagem barata e determinística primeiro — sem custo de LLM
             forma_ok, motivo_forma = validar_forma_do_resultado(pergunta, resultado.data)
             if not forma_ok:
                 feedback_anterior = motivo_forma
-                print(f"[TENTATIVA {tentativa} — bloqueado pela checagem de forma]: {motivo_forma}")
+                pass  # Keep document data and generated code out of console logs.
                 continue  # pula o juiz LLM, já sabemos que está errado
 
             # 2) Só chama o juiz LLM se a forma do resultado já fizer sentido
@@ -387,7 +387,7 @@ def executar_analise_tabular(
                     "tentativas": tentativa,
                 }
             feedback_anterior = veredito.get("motivo", "Erro de validação")
-            print(f"[JUIZ REJEITOU — tentativa {tentativa}] motivo: {feedback_anterior}")
+            pass  # Keep document data and generated code out of console logs.
         except Exception as e:
             feedback_anterior = f"Erro de execução: {e}"
 

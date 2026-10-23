@@ -7,8 +7,9 @@ import "./assets/index.css";
 
 import Chat from "./pages/Chat";
 import LoginPage from "./pages/LoginPage";
+import SetupPage from "./pages/SetupPage";
 import NotFound from "./pages/NotFound";
-import EmailsPage from "./components/EmailsPage";
+
 
 
 createRoot(document.getElementById("root")!).render(
@@ -18,7 +19,7 @@ createRoot(document.getElementById("root")!).render(
         <Routes>
           <Route path="/chat"  element={<Chat />} />
           <Route path="/login" element={<LoginPage />} />
-          <Route path="/emails" element={<EmailsPage />} />
+          <Route path="/setup" element={<SetupPage />} />
           <Route path="/" element={<Navigate to="/chat" replace />} />
           <Route path="*"      element={<NotFound />} />
         </Routes>

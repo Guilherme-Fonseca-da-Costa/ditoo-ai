@@ -1,16 +1,31 @@
+from tools.settings import load_environment
+load_environment()
+from tools.console_output import configure_console_output, disable_model_progress, start_ollama
+configure_console_output()
+import sys
+if __name__ == "__main__" and "--renew-setup-code" in sys.argv:
+    # Works in the packaged executable without starting models, index or HTTP server.
+    from tools.initial_setup import main as renew_initial_setup
+    sys.argv = [sys.argv[0], "--renew"]
+    renew_initial_setup()
+    raise SystemExit(0)
+from pathlib import Path
+import secrets
+import threading
+from sqlalchemy.exc import IntegrityError
 from tools.activity import emitir_etapa, transmitir_processamento
 from tools.clock import responder_relogio, contexto_relogio
 from tools.retrieval import buscar_documentos_permitidos
 from typing import Literal
 from tools.uploads import nome_upload, salvar_upload, progresso_indexacao
-from database.db import Conversation, Folder, FolderAccess, Message, SessionLocal, User, UserMemory, engine
+from database.db import Conversation, Folder, FolderAccess, Message, SessionLocal, User, UserMemory, InitialSetupState, engine
+from tools.initial_setup import InitialSetup, setup_router
 from tools.grounding import responder_percentual
 from tools.code_executor import executar_analise_tabular, deve_analisar_tabela, formatar_resultado
 import pandas as pd
 import re
 import os
 import sys
-import subprocess
 import time
 import socket
 import json
@@ -26,7 +41,6 @@ from fastapi import Depends, HTTPException, UploadFile, File, Form, Response, Re
 import shutil
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import datetime
-from reader import get_emails
 from sqlalchemy import Column, Integer, String, DateTime, ForeignKey
 from chromadb.utils import embedding_functions
 
@@ -59,8 +73,11 @@ TOOLS = [
 ]
 
 
+print("Carregando o modelo de embeddings...", flush=True)
+disable_model_progress()
 embedding = embedding_functions.SentenceTransformerEmbeddingFunction(
     model_name="intfloat/multilingual-e5-large")
+print("Modelo de embeddings pronto.", flush=True)
 
 
 os.environ["OLLAMA_NUM_PARALLEL"] = "1"
@@ -76,8 +93,8 @@ def ollama_ativo():
         return False
 
 if not ollama_ativo():
-    subprocess.Popen(["ollama", "serve"])
-    time.sleep(2)
+    from tools.settings import application_directory
+    start_ollama(ollama_ativo, application_directory() / "logs")
 else:
     print("✅ Ollama já está rodando")
 
@@ -109,9 +126,9 @@ def get_dist_path():
     if getattr(sys, 'frozen', False):
         meipass = sys._MEIPASS
         dist = os.path.join(meipass, "dist")
-        print(f"DEBUG: _MEIPASS = {meipass}")
-        print(f"DEBUG: DIST_PATH = {dist}")
-        print(f"DEBUG: dist exists = {os.path.exists(dist)}")
+        pass  # Do not log credentials, prompts or private content.
+        pass  # Do not log credentials, prompts or private content.
+        pass  # Do not log credentials, prompts or private content.
         return dist
     else:
         return os.path.join(os.path.dirname(os.path.abspath(__file__)), "dist")
@@ -163,14 +180,23 @@ def detect_memory_request(text: str) -> str | None:
 # --- CRIA .env SE NÃO EXISTIR ---
 def env_create():
     if not os.path.exists(ENV_PATH):
-        import secrets
-        secret_key = secrets.token_hex(32)
-        with open(ENV_PATH, "w") as f:
-            f.write(f"SECRET_KEY={secret_key}\n")
-            f.write("DATABASE_URL=sqlite:///ditoo.db\n")
-        print("Arquivo .env criado com variáveis de ambiente padrão.")
+        import tempfile
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=BASE_PATH, delete=False) as f:
+            temporary = f.name
+            f.write(f"SECRET_KEY={secrets.token_hex(32)}\nDATABASE_URL=sqlite:///ditoo.db\n")
+        try:
+            try:
+                os.link(temporary, ENV_PATH)  # Publish complete content once across workers.
+                print("Arquivo .env criado com variáveis de ambiente padrão.")
+            except FileExistsError:
+                pass
+        finally:
+            os.remove(temporary)
 
 env_create()
+load_dotenv(ENV_PATH)
+COOKIE_SECURE = os.getenv("COOKIE_SECURE", "False").lower() == "true"
+INDEX_LOCK = threading.RLock()
 
 from zeroconf.asyncio import AsyncZeroconf
 
@@ -226,6 +252,27 @@ def user_can_access_folder(db, db_user, folder) -> bool:
         folder_id=folder.id, user_id=db_user.id
     ).first()
     return access is not None
+
+def document_path(path: str, allow_root: bool = True) -> str:
+    root = Path(DOCS_PATH).resolve()
+    candidate = Path(path).resolve()
+    if not candidate.is_relative_to(root) or (candidate == root and not allow_root):
+        raise HTTPException(status_code=400, detail="Caminho fora da pasta de documentos.")
+    return str(candidate)
+
+def valid_document_name(name: str) -> bool:
+    if not name or name != name.strip() or name.endswith('.') or name in (".", ".."):
+        return False
+    if any(ord(c) < 32 or c in '<>:"/\\|?*' for c in name):
+        return False
+    stem = name.split('.')[0].upper()
+    return stem not in {"CON", "PRN", "AUX", "NUL", *(f"COM{i}" for i in range(1, 10)), *(f"LPT{i}" for i in range(1, 10))}
+
+def user_can_write_folder(db, db_user, folder) -> bool:
+    if db_user.role == "admin" or folder.user_id == db_user.id:
+        return True
+    access = db.query(FolderAccess).filter_by(folder_id=folder.id, user_id=db_user.id).first()
+    return access is not None and access.access_level == "write"
 
 def resolver_caminho_arquivo(fonte: str, folder_id: str, db) -> str | None:
     """Reconstrói o caminho absoluto de um arquivo a partir do nome salvo
@@ -301,13 +348,19 @@ def sync_folders(base_path: str, newFolder: str, parent_id: str, isPublic, user:
                     detail=f"Pasta pai não encontrada para o ID: {parent_id}"
                 )
 
-        newFolderPath = os.path.join(parent_folder.path, newFolder)
+        if not parent_folder.is_public and not user_can_write_folder(db, db_user, parent_folder):
+            raise HTTPException(status_code=403, detail="Sem permiss\u00e3o para criar pastas aqui.")
+        if not valid_document_name(newFolder):
+            raise HTTPException(status_code=400, detail="Nome de pasta inv\u00e1lido.")
+        newFolderPath = document_path(os.path.join(parent_folder.path, newFolder), allow_root=False)
 
         if not os.path.exists(newFolderPath):
             os.makedirs(newFolderPath, exist_ok=True)
 
         existing_folder = db.query(Folder).filter_by(path=newFolderPath).first()
         if existing_folder:
+            if not user_can_write_folder(db, db_user, existing_folder):
+                raise HTTPException(status_code=403, detail="Sem permiss\u00e3o para esta pasta.")
             print(f"A pasta já existe no banco: {existing_folder.name} (ID: {existing_folder.id})")
             return existing_folder
 
@@ -347,15 +400,24 @@ async def registrar_mdns():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    zeroconf = await registrar_mdns()
-    yield
-    await zeroconf.async_close()
+    zeroconf = None
+    try:
+        await asyncio.to_thread(initial_setup_service.prepare)
+        try:
+            zeroconf = await registrar_mdns()
+        except Exception:
+            print("Descoberta local indispon\u00edvel; acesse pelo endere\u00e7o IP.")
+        yield
+    finally:
+        FileObserver.stop()
+        FileObserver.join(timeout=5)
+        if zeroconf is not None:
+            await zeroconf.async_close()
 
 class Ask(BaseModel):
     texto: str
     conversationId: str | None = None
     title: str | None = None 
-    mail: bool | None = False
 
 
 client = chromadb.PersistentClient(path=VENV_PATH)
@@ -370,6 +432,7 @@ def index_file(caminho: str, on_progress=None):
     """Lê, faz o split e indexa (upsert) um único arquivo, associando ao
     folder_id correto da pasta onde ele está fisicamente agora.
     Usado tanto na indexação inicial quanto pelo watchdog."""
+    caminho = document_path(caminho, allow_root=False)
     file_name = os.path.basename(caminho)
     extensao = os.path.splitext(file_name)[1].lower()
     complete_text = ""
@@ -378,9 +441,9 @@ def index_file(caminho: str, on_progress=None):
         with open(caminho, 'r', encoding='utf-8') as f:
             complete_text = f.read()
     elif extensao == ".pdf":
-        doc = fitz.open(caminho)
-        for pag in doc:
-            complete_text += pag.get_text()
+        with fitz.open(caminho) as doc:
+            for pag in doc:
+                complete_text += pag.get_text()
     elif file_name.lower().endswith(".csv"):
         complete_text = pd.read_csv(caminho, sep=None, engine="python").to_json(
             orient="records", force_ascii=False)
@@ -396,34 +459,56 @@ def index_file(caminho: str, on_progress=None):
     finally:
         db.close()
 
-    collection.delete(where={"$and": [{"fonte": file_name}, {"folder_id": folder.id}]})
     chunks = splitter(complete_text)
-    if on_progress:
-        on_progress(0, len(chunks))
-    for i, block in enumerate(chunks):
-        collection.upsert(
-            documents=[block],
-            ids=[f"{folder.id}_{file_name}_part_{i}"],
-            metadatas=[{"fonte": file_name, "folder_id": folder.id}]
-        )
-        if on_progress:
-            on_progress(i + 1, len(chunks))
-    print(f"Arquivo: {file_name} indexado em {len(chunks)} blocos (pasta: {folder.name}).")
+    if not chunks:
+        return False
+    where = {"$and": [{"fonte": file_name}, {"folder_id": folder.id}]}
+    generation = uuid.uuid4().hex
+    ids = [f"{folder.id}_{generation}_{i}" for i in range(len(chunks))]
+    with INDEX_LOCK:
+        previous = collection.get(where=where, include=[])["ids"]
+        try:
+            if on_progress:
+                on_progress(0, len(chunks))
+            for i, block in enumerate(chunks):
+                collection.upsert(documents=[block], ids=[ids[i]],
+                                  metadatas=[{"fonte": file_name, "folder_id": folder.id}])
+                if on_progress:
+                    on_progress(i + 1, len(chunks))
+        except BaseException:
+            collection.delete(ids=ids)
+            raise
+        if previous:
+            collection.delete(ids=previous)
+    print(f"Arquivo indexado em {len(chunks)} blocos.")
 
     return True
 
-def remove_file_from_index(file_name: str):
-    """Remove todos os chunks de um arquivo do ChromaDB pelo nome do arquivo."""
+def remove_file_from_index(caminho: str):
+    """Delete only the source in its original folder, even after disk removal."""
+    caminho = document_path(caminho, allow_root=False)
+    db = SessionLocal()
     try:
-        collection.delete(where={"fonte": {"$eq": file_name}})
-    except Exception as e:
-        print(f"AVISO: falha ao remover embeddings de {file_name}: {e}")
+        folder = db.query(Folder).filter_by(path=os.path.dirname(caminho)).first()
+        if folder is None:
+            return
+        with INDEX_LOCK:
+            collection.delete(where={"$and": [{"fonte": os.path.basename(caminho)}, {"folder_id": folder.id}]})
+    finally:
+        db.close()
 
 
 # --- Watchdog --- Observa a pasta de documentos e indexa novos arquivos automaticamente
 UPLOADS_EM_ANDAMENTO = set()
 
 class WatchFolder(FileSystemEventHandler):
+    def on_modified(self, event):
+        if not event.is_directory and event.src_path not in UPLOADS_EM_ANDAMENTO and os.path.splitext(event.src_path)[1].lower() in {".pdf", ".txt", ".csv", ".xlsx"}:
+            try:
+                index_file(event.src_path)
+            except Exception:
+                print("Falha ao atualizar o documento modificado; o erro requer nova indexa\u00e7\u00e3o.")
+
     def on_created(self, event):
         if event.src_path in UPLOADS_EM_ANDAMENTO:
             return
@@ -443,8 +528,7 @@ class WatchFolder(FileSystemEventHandler):
         if event.is_directory or event.dest_path in UPLOADS_EM_ANDAMENTO:
             return
         print(f"\n📦 Arquivo movido: {event.src_path} -> {event.dest_path}")
-        old_name = os.path.basename(event.src_path)
-        remove_file_from_index(old_name)
+        remove_file_from_index(event.src_path)
         time.sleep(0.5)
         try:
             index_file(event.dest_path)
@@ -455,7 +539,7 @@ class WatchFolder(FileSystemEventHandler):
         if event.is_directory:
             return
         print(f"\n🗑️ Arquivo removido do disco: {event.src_path}")
-        remove_file_from_index(os.path.basename(event.src_path))
+        remove_file_from_index(event.src_path)
 
 if not os.path.exists(DOCS_PATH):
     os.makedirs(DOCS_PATH)
@@ -516,75 +600,36 @@ def splitter(texto, chunk_length=500, overlap=250):
 
 
 def carregar_documentos_recursivo(diretorio):
-    """Varre um diretório e todas as suas subpastas recursivamente, indexando
-    cada arquivo suportado e associando ao folder_id correto de onde ele está.
-    Se get_folder_for_path falhar por qualquer motivo (ex: erro de banco),
-    a exceção é registrada e a varredura desse diretório é interrompida sem
-    derrubar o restante do processo de indexação nem o boot do servidor."""
-    db = SessionLocal()
-    try:
-        folder = get_folder_for_path(db, diretorio)
-    except Exception as e:
-        print(f"ERRO ao registrar pasta '{diretorio}': {e} — pulando indexação desta pasta.")
-        db.close()
-        return
-    finally:
-        db.close()
-
-    for item in os.listdir(diretorio):
-        caminho = os.path.join(diretorio, item)
-
-        if os.path.isdir(caminho):
-            carregar_documentos_recursivo(caminho)
+    indexed, failed = 0, 0
+    for item in os.scandir(document_path(diretorio)):
+        if item.is_symlink():
             continue
-
-        if item.lower().endswith((".txt", ".pdf", ".xlsx", ".csv")):
+        if item.is_dir():
+            child = carregar_documentos_recursivo(item.path)
+            indexed += child["indexed"]
+            failed += child["failed"]
+        elif Path(item.name).suffix.lower() in {".pdf", ".txt", ".csv", ".xlsx"}:
             try:
-                texto_completo = ''
-                if item.lower().endswith(".txt"):
-                    with open(caminho, 'r', encoding='utf-8') as f:
-                        texto_completo = f.read()
-                elif item.lower().endswith(".pdf"):
-                    doc = fitz.open(caminho)
-                    for pag in doc:
-                        texto_completo += pag.get_text()
-                elif item.lower().endswith(".csv"):
-                    texto_completo = pd.read_csv(caminho, sep=None, engine="python").to_json(
-                        orient="records", force_ascii=False)
-                elif item.lower().endswith(".xlsx"):
-                    texto_completo = readXLSX(caminho)
-
-                if texto_completo:
-                    collection.delete(where={"$and": [{"fonte": item}, {"folder_id": folder.id}]})
-                    chunks = splitter(texto_completo)
-                    for i, bloco in enumerate(chunks):
-                        collection.upsert(
-                            documents=[bloco],
-                            ids=[f"{folder.id}_{item}_part_{i}"],
-                            metadatas=[{"fonte": item, "folder_id": folder.id}]
-                        )
-                    print(f"{item} indexado em {len(chunks)} blocos (pasta: {folder.name}).")
-            except Exception as e:
-                print(f"ERRO ao indexar {caminho}: {e}")
+                if index_file(item.path):
+                    indexed += 1
+                else:
+                    failed += 1
+            except Exception:
+                failed += 1
+                print("Falha ao indexar um documento; o \u00edndice anterior foi preservado quando dispon\u00edvel.")
+    return {"indexed": indexed, "failed": failed}
 
 
 def carregar_documentos(diretorio=None):
-    if diretorio is None:
-        diretorio = DOCS_PATH
-
-    if not os.path.exists(diretorio):
-        os.makedirs(diretorio)
-        print(f"Pasta '{diretorio}' criada.")
-        return
-
-    print("Indexando documentos (recursivamente)...")
+    diretorio = DOCS_PATH if diretorio is None else diretorio
+    os.makedirs(document_path(diretorio), exist_ok=True)
     try:
-        carregar_documentos_recursivo(diretorio)
-    except Exception as e:
-        
-        print(f"ERRO CRÍTICO na indexação inicial: {e}")
-        print("O servidor continuará subindo, mas a indexação pode estar incompleta.")
-    print("Base de dados atualizada!")
+        result = carregar_documentos_recursivo(diretorio)
+    except Exception:
+        print("Falha na varredura dos documentos. O \u00edndice existente foi mantido.")
+        return {"indexed": 0, "failed": 1}
+    print(f"Indexa\u00e7\u00e3o: {result['indexed']} arquivos conclu\u00eddos; {result['failed']} falhas.")
+    return result
 
 if __package__:
     from .tools.startup_index import inicializar_indice
@@ -605,7 +650,7 @@ class UserCreate(BaseModel):
     username: str
     email: str
     password: str
-    role: str
+    role: Literal["user", "admin"] = "user"
 
 class FolderCreate(BaseModel):
     name: str
@@ -629,10 +674,12 @@ class Model(BaseModel):
 SECRET_KEY = os.getenv("SECRET_KEY")
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 security = HTTPBearer()
+initial_setup_service = InitialSetup(SessionLocal, User, InitialSetupState, pwd_context)
+app.include_router(setup_router(initial_setup_service))
 
 def current_user(request: Request):
     token = request.cookies.get(COOKIE_NAME)
-    print(f"CURRENT: {token}")
+    pass  # Do not log credentials, prompts or private content.
     if not token:
         raise HTTPException(status_code=401, detail="Token não fornecido")
     try:
@@ -654,11 +701,6 @@ def require_admin(db, user_email: str) -> User:
         raise HTTPException(status_code=403, detail="Apenas administradores podem executar esta ação")
     return db_user
 
-@app.get("/getEmails")
-def getEmails(user: str = Depends(current_user)):
-    return get_emails()
-
-
 @app.get("/getFolders")
 def getFolders(user: str = Depends(current_user)):
     db = SessionLocal()
@@ -677,7 +719,10 @@ def getFolders(user: str = Depends(current_user)):
                     "path": to_public_path(f.path),
                     "parent_id": f.parent_id,
                     "user_id": f.user_id,
-                    "isPublic": f.is_public
+                    "isPublic": f.is_public,
+                    "can_write": user_can_write_folder(db, db_user, f),
+                    "can_create_subfolder": bool(f.is_public or user_can_write_folder(db, db_user, f)),
+                    "can_delete": (db_user.role == "admin" or f.user_id == db_user.id) and os.path.realpath(f.path) != os.path.realpath(DOCS_PATH)
                 })
 
         return result
@@ -718,6 +763,7 @@ def delete_folder(folder_id: str, user: str = Depends(current_user)):
         if db_user.role != "admin" and folder.user_id != db_user.id:
             raise HTTPException(status_code=403, detail="Sem permissão para remover esta pasta")
 
+        safe_path = document_path(folder.path, allow_root=False)
         all_ids = collect_folder_ids_recursive(db, folder)
 
         db.query(FolderAccess).filter(FolderAccess.folder_id.in_(all_ids)).delete(synchronize_session=False)
@@ -728,7 +774,7 @@ def delete_folder(folder_id: str, user: str = Depends(current_user)):
             print(f"AVISO: falha ao remover embeddings da pasta {folder.id}: {e}")
 
         if os.path.exists(folder.path):
-            shutil.rmtree(folder.path)
+            shutil.rmtree(safe_path)
 
         db.delete(folder)
         db.commit()
@@ -744,20 +790,15 @@ def delete_folder(folder_id: str, user: str = Depends(current_user)):
 
 @app.post("/reindexAll")
 def reindex_all(user: str = Depends(current_user)):
-    """Força reindexação completa de tudo dentro de DOCS_PATH."""
     db = SessionLocal()
     try:
         require_admin(db, user)
     finally:
         db.close()
-
-    try:
-        collection.delete(where={"folder_id": {"$ne": "__never_matches__"}})
-    except Exception as e:
-        print(f"AVISO: falha ao limpar coleção antes de reindexar: {e}")
-
-    carregar_documentos()
-    return {"message": "Reindexação completa concluída"}
+    result = carregar_documentos()
+    if result["failed"]:
+        raise HTTPException(status_code=500, detail={"message": "Reindexa\u00e7\u00e3o incompleta. Os \u00edndices anteriores foram mantidos quando dispon\u00edveis.", **result})
+    return {"message": "Reindexa\u00e7\u00e3o conclu\u00edda", **result}
 
 
 @app.post("/grantFolderAccess")
@@ -906,18 +947,25 @@ def get_user_memories(user=Depends(current_user)):
         db.close()
 
 @app.post("/changeModel")
-def changeModel(model: Model):
+def changeModel(model: Model, user: str = Depends(current_user)):
     global MODEL
-    MODEL = model.model
-    
+    db = SessionLocal()
     try:
-        ollama.chat(model=MODEL, messages=[{"role": "user", "content": "ok"}], keep_alive=0)
-    except:
-        pass
-    
-    ollama.pull(model.model)  
-    
-    print(f"Modelo trocado para: {MODEL}")
+        require_admin(db, user)
+    finally:
+        db.close()
+    try:
+        installed = ollama.list()
+        entries = installed.models if hasattr(installed, "models") else installed.get("models", [])
+        names = {entry.model if hasattr(entry, "model") else entry.get("model", entry.get("name")) for entry in entries}
+        if model.model not in names:
+            raise HTTPException(status_code=400, detail="Selecione um modelo instalado no servidor.")
+        ollama.chat(model=model.model, messages=[{"role": "user", "content": "ok"}], keep_alive=0)
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=503, detail="N\u00e3o foi poss\u00edvel carregar o modelo.")
+    MODEL = model.model
     return {"message": f"Modelo trocado para {MODEL}"}
 
 @app.get("/fetchMessages/{conversation_id}")
@@ -928,6 +976,9 @@ async def fetch_messages(conversation_id: str, user=Depends(current_user)):
         if not db_user:
             raise HTTPException(status_code=404, detail="Usuário não encontrado")
 
+        conversation = db.query(Conversation).filter_by(id=conversation_id, user_id=db_user.id).first()
+        if not conversation:
+            raise HTTPException(status_code=404, detail="Conversa n\u00e3o encontrada.")
         messages = (
             db.query(Message)
             .filter_by(conversation_id=conversation_id)
@@ -935,7 +986,7 @@ async def fetch_messages(conversation_id: str, user=Depends(current_user)):
             .all()
         )
         
-        print("Mensagens" + str([m.content for m in messages]))
+        pass  # Sensitive content is intentionally excluded from logs.
         return [
             {"id": m.id, "sender": m.role, "text": m.content}
             for m in messages
@@ -966,61 +1017,63 @@ async def get_conversations(user=Depends(current_user)):
         db.close()
 
 @app.post("/register")
-def register(user: UserCreate):
+def register(user: UserCreate, request: Request):
     db = SessionLocal()
-    if db.query(User).filter_by(username=user.username).first():
-        raise HTTPException(status_code=400, detail="Usuário já existe")
-    
-    novo_user = User(
-        username=user.username,
-        email=user.email,
-        password=pwd_context.hash(user.password),
-        role=user.role
-    )
-    db.add(novo_user)
-    db.commit()
-    return {"message": "Usuário criado!"}
+    try:
+        require_admin(db, current_user(request))
+        role = user.role
+        if db.query(User).filter_by(username=user.username).first() or db.query(User).filter_by(email=user.email).first():
+            raise HTTPException(status_code=409, detail="Nome de usu\u00e1rio ou e-mail j\u00e1 cadastrado.")
+        if not user.username.strip() or "@" not in user.email or not user.password:
+            raise HTTPException(status_code=422, detail="Dados de cadastro inv\u00e1lidos.")
+        db.add(User(username=user.username, email=user.email, password=pwd_context.hash(user.password), role=role))
+        db.commit()
+        return {"message": "Usu\u00e1rio criado!"}
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Cadastro j\u00e1 existente.")
+    finally:
+        db.close()
 
 @app.get("/getUsers")
 async def getUsers(user=Depends(current_user)):
     db = SessionLocal()
-    db_users = db.query(User).all()
-    
-    return [
-        {
-            "id": u.id,
-            "username": u.username,
-            "email": u.email,
-            "role": u.role
-        }
-        for u in db_users
-    ]
+    try:
+        require_admin(db, user)
+        return [{"id": u.id, "username": u.username, "email": u.email, "role": u.role} for u in db.query(User).all()]
+    finally:
+        db.close()
 @app.post("/loginUser")
 async def login(user: UserLogin, response: Response):
-    print(f"Usuário: {user}")
+    pass  # Sensitive content is intentionally excluded from logs.
     db = SessionLocal()
-    db_user = db.query(User).filter_by(email=user.email).first()
-    
-    if not db_user or not pwd_context.verify(user.password, db_user.password):
-        raise HTTPException(status_code=401, detail="Credenciais inválidas")
-    
-    token = jwt.encode({
-        "user": db_user.username,
-        "sub": db_user.email,
-        "exp": datetime.datetime.utcnow() + datetime.timedelta(hours=8),
-        "role": db_user.role
-    }, SECRET_KEY, algorithm="HS256")
-    
-    response.set_cookie(
-        key=COOKIE_NAME,
-        value=token,
-        httponly=True,
-        secure=COOKIE_SECURE,
-        samesite="lax",
-        max_age=8 * 3600,
-        path="/"
-    )
-    return {"message": "Login realizado", "username": db_user.username, "role": db_user.role}
+    try:
+        db_user = db.query(User).filter_by(email=user.email).first()
+        if db_user is None:
+            db_user = db.query(User).filter_by(email=user.email.strip().lower()).first()
+
+        if not db_user or not pwd_context.verify(user.password, db_user.password):
+            raise HTTPException(status_code=401, detail="Credenciais inválidas")
+
+        token = jwt.encode({
+            "user": db_user.username,
+            "sub": db_user.email,
+            "exp": datetime.datetime.utcnow() + datetime.timedelta(hours=8),
+            "role": db_user.role
+        }, SECRET_KEY, algorithm="HS256")
+
+        response.set_cookie(
+            key=COOKIE_NAME,
+            value=token,
+            httponly=True,
+            secure=COOKIE_SECURE,
+            samesite="lax",
+            max_age=8 * 3600,
+            path="/"
+        )
+        return {"message": "Login realizado", "username": db_user.username, "role": db_user.role}
+    finally:
+        db.close()
 
 @app.post("/logout")
 def logout(response: Response):
@@ -1056,9 +1109,9 @@ async def upload_file(file: UploadFile = File(...), folder_id: str | None = Form
                 raise HTTPException(status_code=404, detail="Pasta n\u00e3o encontrada.")
         else:
             folder = get_folder_for_path(db, os.path.join(DOCS_PATH, "root"))
-        if not user_can_access_folder(db, db_user, folder):
+        if not user_can_write_folder(db, db_user, folder):
             raise HTTPException(status_code=403, detail="Sem permiss\u00e3o para enviar arquivos a esta pasta.")
-        caminho = os.path.join(folder.path, nome)
+        caminho = document_path(os.path.join(folder.path, nome), allow_root=False)
         UPLOADS_EM_ANDAMENTO.add(caminho)
         await asyncio.to_thread(salvar_upload, file.file, folder.path, nome)
         if progress:
@@ -1134,7 +1187,7 @@ async def answer(request_data: Ask, user=Depends(current_user)):
         db_user = db.query(User).filter_by(email=user).first()
         if not db_user:
             raise HTTPException(status_code=404, detail="Usu\u00e1rio n\u00e3o encontrado")
-        if request_data.conversationId and not request_data.mail:
+        if request_data.conversationId:
             conversation = db.query(Conversation).filter_by(id=request_data.conversationId, user_id=db_user.id).first()
             if not conversation:
                 raise HTTPException(status_code=404, detail="Conversa n\u00e3o encontrada")
@@ -1150,36 +1203,32 @@ async def preparar_resposta(request_data: Ask, user):
     db = SessionLocal()
     db_user = db.query(User).filter_by(email=user).first()
 
-    is_mail = request_data.mail
     conversation = None
     memory = []
     memory_content = None
 
-    if not request_data.mail:
-        if request_data.conversationId:
-            conversation = db.query(Conversation).filter_by(id=request_data.conversationId, user_id=db_user.id).first()
-            if not conversation:
-                raise HTTPException(status_code=404, detail="Conversa não encontrada")
-        else:
-            conversation = Conversation(user_id=db_user.id, title=request_data.title or "Nova Conversa")
-            db.add(conversation)
-            db.commit()
-            db.refresh(conversation)
-
-        history = db.query(Message).filter_by(conversation_id=conversation.id).order_by(Message.created_at.desc()).all()
-        print(f"DEBUG: Histórico de mensagens Inicial: {[{'role': m.role, 'content': m.content} for m in history]}")
-        MAX_HISTORY = 15
-        memory = history[:MAX_HISTORY]
-        memory.reverse() 
-
-        db.add(Message(conversation_id=conversation.id, role="user", content=request_data.texto))
+    if request_data.conversationId:
+        conversation = db.query(Conversation).filter_by(id=request_data.conversationId, user_id=db_user.id).first()
+        if not conversation:
+            raise HTTPException(status_code=404, detail="Conversa não encontrada")
+    else:
+        conversation = Conversation(user_id=db_user.id, title=request_data.title or "Nova Conversa")
+        db.add(conversation)
         db.commit()
+        db.refresh(conversation)
 
-        memory_content = detect_memory_request(request_data.texto)
-        if memory_content:
-            db.add(UserMemory(user_id=db_user.id, content=memory_content))
-            db.commit()
-            print(f"DEBUG: Memória salva: {memory_content}")
+    history = db.query(Message).filter_by(conversation_id=conversation.id).order_by(Message.created_at.desc()).limit(15).all()
+    MAX_HISTORY = 15
+    memory = history[:MAX_HISTORY]
+    memory.reverse()
+
+    db.add(Message(conversation_id=conversation.id, role="user", content=request_data.texto))
+    db.commit()
+
+    memory_content = detect_memory_request(request_data.texto)
+    if memory_content:
+        db.add(UserMemory(user_id=db_user.id, content=memory_content))
+        db.commit()
 
     conversation_id = conversation.id if conversation else None
 
@@ -1300,7 +1349,7 @@ async def preparar_resposta(request_data: Ask, user):
                 smlFonts[archive] = slm
 
         fonts = [meta['fonte'] for meta in results["metadatas"][0]]
-        print(f"DEBUG: Similaridade por fonte: {smlFonts}")
+        pass  # Do not log credentials, prompts or private content.
 
     if not smlFonts:
         winnerFonts = []
@@ -1322,7 +1371,7 @@ async def preparar_resposta(request_data: Ask, user):
             fonte: round(smlFonts[fonte] * 100)
             for fonte in winnerFonts
         }
-        print(f"DEBUG: Fontes vencedoras ({MIN_GAP}): {winnerFonts}")
+        pass  # Do not log credentials, prompts or private content.
 
     contexto_tool = contexto if tool_utilizada else ""
 
@@ -1364,7 +1413,7 @@ async def preparar_resposta(request_data: Ask, user):
         else {"temperature": 0, "repeat_penalty": 1.1}
 )
 
-    print(f"Contexto final enviado ao modelo: {contexto}")
+    pass  # Do not log credentials, prompts or private content.
     user_memories = db.query(UserMemory).filter_by(user_id=db_user.id).all()
     memoria_permanente = ""
     if user_memories:
@@ -1472,9 +1521,9 @@ calculado com precisão via código Python real — não é uma estimativa nem u
 
     async def generate():
         print(f"id_resposta:{id_resposta}")
-        print(f"DEBUG: Prompt do sistema: {prompt_sistema}")
-        print(f"DEBUG: Memória: {memory}")
-        print(f"DEBUG: Histórico de mensagens: {messages}")
+        pass  # Do not log credentials, prompts or private content.
+        pass  # Do not log credentials, prompts or private content.
+        pass  # Do not log credentials, prompts or private content.
         yield json.dumps({
             "type": "id",
             "id": id_resposta,
@@ -1544,7 +1593,7 @@ calculado com precisão via código Python real — não é uma estimativa nem u
                     emitir_etapa("generating")
                     iniciou_texto = True
                 buffer += content
-                print(f"DEBUG: Conteúdo do chunk: {content}")
+                pass  # Do not log credentials, prompts or private content.
 
                 match = padrao_inicio_lista.search(buffer)
                 if match:
@@ -1562,7 +1611,7 @@ calculado com precisão via código Python real — não é uma estimativa nem u
                             "percent": percents,
                             "conversationId": conversation_id
                         }) + "\n"
-                    print("DEBUG: Lista do próprio LLM detectada e descartada — usando a determinística")
+                    pass  # Do not log credentials, prompts or private content.
                     break  
                 seguro_ate = max(0, len(buffer) - 30)
                 trecho_novo = buffer[len(enviado):seguro_ate]
@@ -1600,7 +1649,7 @@ calculado com precisão via código Python real — não é uma estimativa nem u
                     emitir_etapa("generating")
                     iniciou_texto = True
                 final_response += content
-                print(f"DEBUG: Conteúdo do chunk: {content}")
+                pass  # Do not log credentials, prompts or private content.
                 yield json.dumps({
                     "type": "content",
                     "text": content,
@@ -1615,7 +1664,7 @@ calculado com precisão via código Python real — não é uma estimativa nem u
         if lista_determinada:
             bloco_lista = f"\n\n{lista_determinada}"
             final_response += bloco_lista
-            print(f"DEBUG: Lista determinística anexada:\n{bloco_lista}")
+            pass  # Do not log credentials, prompts or private content.
             yield json.dumps({
                 "type": "content",
                 "text": bloco_lista,
@@ -1657,7 +1706,7 @@ if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
 
-# Comando para rodar o servidor | 
+# Comando para rodar o servidor | python -m uvicorn engine:app --host 0.0.0.0 --port 8000 --reload
 #  Comando para buildar o executável:
 """
 Gerar build para Windows:

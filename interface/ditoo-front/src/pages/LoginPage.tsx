@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router";
+import { useLocation, useNavigate } from "react-router";
 import DitooLogo from "../components/DitooLogo";
 import Alert from "../components/Alert";
 import { api } from "../services/api";
@@ -15,6 +15,11 @@ interface AlertItem {
 export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [checking, setChecking] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [retry, setRetry] = useState(0);
+  const [connectionError, setConnectionError] = useState("");
+  const location = useLocation();
 
 const [alerts, setAlerts] = useState<AlertItem[]>([]);
   const navigate = useNavigate();
@@ -29,23 +34,31 @@ function removeAlert(id: number) {
 }
 
   useEffect(() => {
-  api.getMe().then((me) => {
-    if (me) {
-      navigate("/chat");
-    }
-  });
-}, []);
+    let active = true;
+    Promise.all([api.getMe(), api.getSetupStatus()]).then(([me, setup]) => {
+      if (!active) return;
+      if (me) navigate("/chat", { replace: true });
+      else if (setup.required) navigate("/setup", { replace: true });
+      else setChecking(false);
+    }).catch(() => {
+      if (active) setConnectionError("Não foi possível verificar o servidor. Tente novamente.");
+    });
+    return () => { active = false; };
+  }, [navigate, retry]);
 
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    const data =  await api.login(email, password)
-    if (data?.error) {
-      console.log(data?.error)
-      console.log("Não autorizado")
-      pushAlert("Email ou senha incorretos", "error")
-    }else {
-      navigate("/chat");
+    if (checking || busy) return;
+    setBusy(true);
+    try {
+      const data = await api.login(email, password);
+      if (data?.error) pushAlert(data.error, "error");
+      else navigate("/chat");
+    } catch {
+      pushAlert("Não foi possível entrar. Confira sua conexão e tente novamente.", "error");
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -63,6 +76,9 @@ function removeAlert(id: number) {
         <DitooLogo size={44} />
         <h1 className="login-title">ditoo</h1>
         <p className="login-subtitle">Faça login para continuar</p>
+        {location.state?.setupComplete && <p role="status">Configuração inicial encerrada. Entre com a conta que foi criada.</p>}
+        {checking && !connectionError && <p role="status">Verificando a instalação...</p>}
+        {connectionError && <><p role="alert">{connectionError}</p><button type="button" className="login-btn" onClick={() => { setConnectionError(""); setRetry(value => value + 1); }}>Tentar novamente</button></>}
 
         <form
           onSubmit={handleSubmit}
@@ -92,8 +108,8 @@ function removeAlert(id: number) {
             autoComplete="current-password"
             style={{ marginTop: 8 }}
           />
-          <button onClick={handleSubmit} className="login-btn">
-            Entrar
+          <button type="submit" disabled={checking || busy} className="login-btn">
+            {busy ? "Entrando..." : "Entrar"}
           </button>
         </form>
 
