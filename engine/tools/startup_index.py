@@ -48,6 +48,23 @@ def console_interativo():
         yield entrada, saida
 
 
+def perguntar_modo_8gb():
+    with console_interativo() as (entrada, saida):
+        if entrada is None:
+            return False
+        while True:
+            try:
+                print("Deseja ativar o modo otimizado para GPUs de até 8GB de VRAM? [s/N]: ", end="", file=saida, flush=True)
+                resposta = entrada.readline().strip().casefold()
+            except (EOFError, OSError):
+                return False
+            if resposta in ("s", "sim", "y", "yes"):
+                return True
+            if resposta in ("", "n", "não", "nao", "no"):
+                return False
+            print("Resposta inválida. Digite sim (s) ou não (n).", file=saida, flush=True)
+
+
 def perguntar_reindexacao():
     with console_interativo() as (entrada, saida):
         if entrada is None:

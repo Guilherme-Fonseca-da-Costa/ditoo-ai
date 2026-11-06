@@ -3,7 +3,7 @@ import os
 import tempfile
 from fastapi import HTTPException
 
-SUPPORTED_EXTENSIONS = {".pdf", ".txt", ".csv", ".xlsx"}
+SUPPORTED_EXTENSIONS = {".pdf", ".docx", ".txt", ".csv", ".xlsx"}
 
 
 def nome_upload(filename):
@@ -14,7 +14,7 @@ def nome_upload(filename):
     if stem in {"CON", "PRN", "AUX", "NUL", *(f"COM{i}" for i in range(1, 10)), *(f"LPT{i}" for i in range(1, 10))}:
         raise HTTPException(status_code=400, detail="Nome de arquivo inv\u00e1lido.")
     if os.path.splitext(nome)[1].lower() not in SUPPORTED_EXTENSIONS:
-        raise HTTPException(status_code=400, detail="Formato n\u00e3o suportado. Envie PDF, TXT, CSV ou XLSX.")
+        raise HTTPException(status_code=400, detail="Formato n\u00e3o suportado. Envie PDF, DOCX, TXT, CSV ou XLSX.")
     return nome
 
 

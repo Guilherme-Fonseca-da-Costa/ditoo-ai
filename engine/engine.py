@@ -1,6 +1,6 @@
 from tools.settings import load_environment
 load_environment()
-from tools.console_output import configure_console_output, disable_model_progress, start_ollama
+from tools.console_output import configure_console_output, disable_model_progress, start_ollama, detectar_gpu_amd, parar_ollama_existente
 configure_console_output()
 import sys
 if __name__ == "__main__" and "--renew-setup-code" in sys.argv:
@@ -32,6 +32,7 @@ import json
 import uuid
 from contextlib import asynccontextmanager
 import openpyxl
+import docx
 import os
 import asyncio
 from pydantic import BaseModel
@@ -73,16 +74,40 @@ TOOLS = [
 ]
 
 
+if __package__:
+    from .tools.startup_index import perguntar_modo_8gb
+else:
+    from tools.startup_index import perguntar_modo_8gb
+
+MODO_AMD = detectar_gpu_amd()
+MODO_8GB = perguntar_modo_8gb()
+
 print("Carregando o modelo de embeddings...", flush=True)
 disable_model_progress()
-embedding = embedding_functions.SentenceTransformerEmbeddingFunction(
-    model_name="intfloat/multilingual-e5-large")
+if MODO_AMD or MODO_8GB:
+    embedding = embedding_functions.SentenceTransformerEmbeddingFunction(
+        model_name="intfloat/multilingual-e5-large",
+        device="cpu")
+else:
+    embedding = embedding_functions.SentenceTransformerEmbeddingFunction(
+        model_name="intfloat/multilingual-e5-large")
 print("Modelo de embeddings pronto.", flush=True)
 
 
-os.environ["OLLAMA_NUM_PARALLEL"] = "1"
-os.environ["OLLAMA_MAX_LOADED_MODELS"] = "2"
-os.environ["OLLAMA_CONTEXT_LENGTH"] = "8192"
+if MODO_AMD:
+    print(" Placa AMD Radeon detectada: Ativando aceleração Vulkan no Ollama...", flush=True)
+    os.environ["OLLAMA_VULKAN"] = "1"
+
+if MODO_8GB:
+    print("⚡ Modo otimizado para até 8GB de VRAM ativado (contexto=4096, n_results=4, histórico=2, KV-cache ativo).", flush=True)
+    os.environ["OLLAMA_NUM_PARALLEL"] = "1"
+    os.environ["OLLAMA_MAX_LOADED_MODELS"] = "1"
+    os.environ["OLLAMA_CONTEXT_LENGTH"] = "4096"
+    os.environ["OLLAMA_KEEP_ALIVE"] = "-1"
+else:
+    os.environ["OLLAMA_NUM_PARALLEL"] = "1"
+    os.environ["OLLAMA_MAX_LOADED_MODELS"] = "2"
+    os.environ["OLLAMA_CONTEXT_LENGTH"] = "8192"
 
 def ollama_ativo():
     try:
@@ -91,6 +116,9 @@ def ollama_ativo():
         return True
     except:
         return False
+
+if (MODO_AMD or MODO_8GB) and ollama_ativo():
+    parar_ollama_existente(ollama_ativo)
 
 if not ollama_ativo():
     from tools.settings import application_directory
@@ -449,6 +477,8 @@ def index_file(caminho: str, on_progress=None):
             orient="records", force_ascii=False)
     elif extensao == ".xlsx":
         complete_text = readXLSX(caminho)
+    elif extensao == ".docx":
+        complete_text = readDOCX(caminho)
 
     if not complete_text:
         return False
@@ -503,7 +533,7 @@ UPLOADS_EM_ANDAMENTO = set()
 
 class WatchFolder(FileSystemEventHandler):
     def on_modified(self, event):
-        if not event.is_directory and event.src_path not in UPLOADS_EM_ANDAMENTO and os.path.splitext(event.src_path)[1].lower() in {".pdf", ".txt", ".csv", ".xlsx"}:
+        if not event.is_directory and event.src_path not in UPLOADS_EM_ANDAMENTO and os.path.splitext(event.src_path)[1].lower() in {".pdf", ".docx", ".txt", ".csv", ".xlsx"}:
             try:
                 index_file(event.src_path)
             except Exception:
@@ -562,6 +592,20 @@ def readXLSX(caminho):
         wb.close()
 
 
+def readDOCX(caminho):
+    doc = docx.Document(caminho)
+    partes = []
+    for p in doc.paragraphs:
+        if p.text.strip():
+            partes.append(p.text.strip())
+    for tabela in doc.tables:
+        for linha in tabela.rows:
+            celulas = [c.text.strip() for c in linha.cells if c.text.strip()]
+            if celulas:
+                partes.append(" | ".join(celulas))
+    return "\n".join(partes)
+
+
 os.makedirs(DOCS_PATH, exist_ok=True)
 
 FileObserver = Observer()
@@ -608,7 +652,7 @@ def carregar_documentos_recursivo(diretorio):
             child = carregar_documentos_recursivo(item.path)
             indexed += child["indexed"]
             failed += child["failed"]
-        elif Path(item.name).suffix.lower() in {".pdf", ".txt", ".csv", ".xlsx"}:
+        elif Path(item.name).suffix.lower() in {".pdf", ".docx", ".txt", ".csv", ".xlsx"}:
             try:
                 if index_file(item.path):
                     indexed += 1
@@ -1217,8 +1261,8 @@ async def preparar_resposta(request_data: Ask, user):
         db.commit()
         db.refresh(conversation)
 
-    history = db.query(Message).filter_by(conversation_id=conversation.id).order_by(Message.created_at.desc()).limit(15).all()
-    MAX_HISTORY = 15
+    MAX_HISTORY = 2 if MODO_8GB else 15
+    history = db.query(Message).filter_by(conversation_id=conversation.id).order_by(Message.created_at.desc()).limit(MAX_HISTORY).all()
     memory = history[:MAX_HISTORY]
     memory.reverse()
 
@@ -1252,17 +1296,17 @@ async def preparar_resposta(request_data: Ask, user):
                                  headers={"Cache-Control":"no-cache", "X-Accel-Buffering":"no"})
 
     percentResult = 0
-    max_fonts = 3
+    max_fonts = 1 if MODO_8GB else 3
     context_parts = []
     fonts = []
     smlFonts = {}
     winnerFont = None
-    MIN_GAP = 0.15
+    MIN_GAP = 0.08 if MODO_8GB else 0.15
 
     emitir_etapa("permissions")
     accessible_ids = get_accessible_folder_ids(db, db_user)
     emitir_etapa("search")
-    results = buscar_documentos_permitidos(collection, request_data.texto, accessible_ids)
+    results = buscar_documentos_permitidos(collection, request_data.texto, accessible_ids, max_results=4 if MODO_8GB else 20)
 
     def is_allowed(meta):
         if accessible_ids is None: 
@@ -1391,7 +1435,7 @@ async def preparar_resposta(request_data: Ask, user):
             candidatos = [f for f in arquivos_unicos if os.path.basename(f) == fonte]
             if len(candidatos) == 1 and candidatos[0].lower().endswith(".txt"):
                 try:
-                    if os.path.getsize(candidatos[0]) <= 14000:
+                    if os.path.getsize(candidatos[0]) <= (6000 if MODO_8GB else 14000):
                         with open(candidatos[0], encoding="utf-8") as documento:
                             textos = documento.read()
                 except (OSError, UnicodeError):
@@ -1512,11 +1556,31 @@ calculado com precisão via código Python real — não é uma estimativa nem u
     """
 
     id_resposta = str(uuid.uuid4())
-    messages = [{'role': 'system', 'content': prompt_sistema}]
-    for msg in memory:
-        role = "assistant" if msg.role == "ai" else "user"
-        messages.append({'role': role, 'content': msg.content})
-    messages.append({'role': 'user', 'content': request_data.texto})
+    if MODO_8GB:
+        prompt_sistema_8gb = (
+            "Voc\u00ea \u00e9 o Ditoo, assistente de IA interno da empresa.\n"
+            "Regras obrigat\u00f3rias:\n"
+            "- Responda sempre em Portugu\u00eas do Brasil, de forma natural, direta e objetiva.\n"
+            "- Baseie-se estritamente no CONTEXTO fornecido na mensagem atual. N\u00e3o invente dados, valores, nomes ou regras.\n"
+            "- Se a informa\u00e7\u00e3o n\u00e3o estiver no contexto, diga claramente que n\u00e3o consta no documento.\n"
+            "- N\u00e3o cite nomes de arquivos mecanicamente e n\u00e3o repita respostas de perguntas anteriores."
+        )
+        if memoria_permanente:
+            prompt_sistema_8gb += "\n" + memoria_permanente.strip()
+        if instrucao_tabular_extra:
+            prompt_sistema_8gb += "\n" + instrucao_tabular_extra.strip()
+        messages = [{'role': 'system', 'content': prompt_sistema_8gb}]
+        for msg in memory:
+            role = "assistant" if msg.role == "ai" else "user"
+            messages.append({'role': role, 'content': msg.content})
+        conteudo_usuario_8gb = f"CONTEXTO:\n{contexto}\n\nPERGUNTA:\n{request_data.texto}"
+        messages.append({'role': 'user', 'content': conteudo_usuario_8gb})
+    else:
+        messages = [{'role': 'system', 'content': prompt_sistema}]
+        for msg in memory:
+            role = "assistant" if msg.role == "ai" else "user"
+            messages.append({'role': role, 'content': msg.content})
+        messages.append({'role': 'user', 'content': request_data.texto})
 
 
     async def generate():
@@ -1724,6 +1788,7 @@ python -m PyInstaller --onefile --name ditoo-server \
   --collect-all passlib \
   --collect-all jose \
   --collect-all openpyxl \
+  --collect-all docx \
   --collect-all dotenv \
   --collect-all fitz \
   --collect-all asyncio \
@@ -1754,6 +1819,7 @@ python -m PyInstaller --onefile --name ditoo-server \
   --collect-all passlib \
   --collect-all jose \
   --collect-all openpyxl \
+  --collect-all docx \
   --collect-all dotenv \
   --collect-all fitz \
   --collect-all asyncio \

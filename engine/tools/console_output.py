@@ -25,6 +25,40 @@ def disable_model_progress():
     disable_progress_bar()
 
 
+def detectar_gpu_amd() -> bool:
+    """Detecta se a máquina Windows possui GPU AMD Radeon dedicada sem GPU NVIDIA."""
+    if os.name != "nt":
+        return False
+    try:
+        saida = subprocess.check_output(
+            ["powershell", "-NoProfile", "-Command", "(Get-CimInstance Win32_VideoController).Name"],
+            text=True,
+            timeout=5,
+            stderr=subprocess.DEVNULL,
+            creationflags=subprocess.CREATE_NO_WINDOW,
+        ).lower()
+        return ("amd" in saida or "radeon" in saida) and ("nvidia" not in saida)
+    except Exception:
+        return False
+
+
+def parar_ollama_existente(ready, timeout=5):
+    """Encerra instâncias prévias do Ollama no Windows para reaplicar variáveis de GPU (Vulkan)."""
+    if os.name != "nt" or not ready():
+        return
+    flags = subprocess.CREATE_NO_WINDOW
+    for proc_name in ("ollama app.exe", "ollama.exe"):
+        subprocess.run(
+            ["taskkill", "/F", "/IM", proc_name],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            creationflags=flags,
+        )
+    limite = time.monotonic() + timeout
+    while ready() and time.monotonic() < limite:
+        time.sleep(0.2)
+
+
 def start_ollama(ready, log_directory, *, timeout=30, popen=None, sleep=None, clock=None):
     """Only a new Ditoo-owned subprocess is redirected; existing servers are untouched."""
     popen = subprocess.Popen if popen is None else popen

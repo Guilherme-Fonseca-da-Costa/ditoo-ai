@@ -66,8 +66,8 @@ export default function UploadPanel({ onClose, onUploadSuccess }: Props) {
 
   function addFiles(selected: File[]) {
     if (busy.current) return;
-    const supported = selected.filter(file => /\.(pdf|txt|csv|xlsx)$/i.test(file.name));
-    setUploadError(supported.length !== selected.length ? "Alguns arquivos foram ignorados. Envie PDF, TXT, CSV ou XLSX." : "");
+    const supported = selected.filter(file => /\.(pdf|docx|txt|csv|xlsx)$/i.test(file.name));
+    setUploadError(supported.length !== selected.length ? "Alguns arquivos foram ignorados. Envie PDF, DOCX, TXT, CSV ou XLSX." : "");
     setFiles(previous => [...previous, ...supported.filter(file => !previous.some(item => item.name === file.name && item.size === file.size && item.lastModified === file.lastModified))]);
     setFinished(false); setProgress(null);
   }
@@ -111,11 +111,11 @@ export default function UploadPanel({ onClose, onUploadSuccess }: Props) {
               {folders.map(folder => <option key={folder.id} value={folder.id}>{folder.name}</option>)}
             </select>
           </label>
-          <input ref={inputRef} id={inputId} type="file" className="upload-file-input" accept=".pdf,.txt,.csv,.xlsx" multiple disabled={sending}
+          <input ref={inputRef} id={inputId} type="file" className="upload-file-input" accept=".pdf,.docx,.txt,.csv,.xlsx" multiple disabled={sending}
             onChange={event => { event.stopPropagation(); addFiles(Array.from(event.currentTarget.files ?? [])); event.currentTarget.value = ""; }} />
           <button type="button" className={`upload-dropzone ${over ? "is-over" : ""}`} disabled={sending}
             onClick={() => inputRef.current?.click()} onDragOver={event => { event.preventDefault(); setOver(true); }} onDragLeave={() => setOver(false)} onDrop={drop}>
-            <Upload size={28} /><strong>Escolher arquivos</strong><span>Selecione os arquivos ou arraste para cá.</span><small>PDF, TXT, CSV e XLSX</small>
+            <Upload size={28} /><strong>Escolher arquivos</strong><span>Selecione os arquivos ou arraste para cá.</span><small>PDF, DOCX, TXT, CSV e XLSX</small>
           </button>
           {files.length > 0 && <ul className="upload-file-list" aria-label="Arquivos selecionados">{files.map((file, index) => <li key={`${file.name}-${file.size}-${index}`}>
             <FileText size={20} aria-hidden="true" /><div><strong title={file.name}>{file.name}</strong><span>{file.size < 1048576 ? `${(file.size / 1024).toFixed(1)} KB` : `${(file.size / 1048576).toFixed(1)} MB`}</span></div>
