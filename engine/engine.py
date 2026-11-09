@@ -579,15 +579,65 @@ def readXLSX(caminho):
     try:
         partes = [f"Abas do arquivo ({len(wb.sheetnames)}): {', '.join(wb.sheetnames)}"]
         for sheet in wb.worksheets:
-            linhas = sheet.iter_rows(values_only=True)
-            cabecalho = next(linhas, ())
-            for linha in linhas:
-                if any(valor is not None for valor in linha):
-                    campos = "; ".join(
-                        f"{nome}: {valor}" for nome, valor in zip(cabecalho, linha)
-                        if nome is not None)
+            todas = [r for r in sheet.iter_rows(values_only=True) if any(v is not None for v in r)]
+            if not todas:
+                continue
+            header_idx = next((i for i, r in enumerate(todas[:5]) if sum(1 for v in r if v is not None) >= 2), 0)
+            for banner in todas[:header_idx]:
+                textos_banner = [str(v).strip() for v in banner if v is not None and str(v).strip()]
+                if textos_banner:
+                    partes.append(f"Aba: {sheet.title} | T\u00edtulo: {' - '.join(textos_banner)}")
+            cabecalho = todas[header_idx]
+            for linha in todas[header_idx + 1:]:
+                campos = "; ".join(
+                    f"{nome}: {valor}" for nome, valor in zip(cabecalho, linha)
+                    if nome is not None and valor is not None)
+                if campos:
                     partes.append(f"Aba: {sheet.title} | {campos}")
         return "\n".join(partes)
+    finally:
+        wb.close()
+
+
+def montar_contexto_xlsx_8gb(caminho, pergunta, chunks):
+    wb = openpyxl.load_workbook(caminho, data_only=True, read_only=True)
+    try:
+        nomes_abas = wb.sheetnames
+        texto_chunks = "\n".join(chunks or [])
+        pergunta_low = pergunta.lower()
+        melhor_aba = nomes_abas[0] if nomes_abas else None
+        melhor_score = -1
+        abas_dados = {}
+        for sheet in wb.worksheets:
+            todas = [r for r in sheet.iter_rows(values_only=True) if any(v is not None for v in r)]
+            if not todas:
+                continue
+            header_idx = next((i for i, r in enumerate(todas[:5]) if sum(1 for v in r if v is not None) >= 2), 0)
+            cabecalho = [str(c).strip() if c is not None else "" for c in todas[header_idx]]
+            linhas = todas[header_idx + 1:]
+            abas_dados[sheet.title] = (cabecalho, linhas)
+            score = texto_chunks.count(f"Aba: {sheet.title}") * 3
+            for token in re.split(r"[_\s-]+", sheet.title.lower()):
+                if len(token) >= 3 and token in pergunta_low:
+                    score += 5
+            if score > melhor_score:
+                melhor_score = score
+                melhor_aba = sheet.title
+        if not abas_dados:
+            return ""
+        partes = [f"Abas da planilha ({len(nomes_abas)}): {', '.join(nomes_abas)}"]
+        if melhor_aba in abas_dados:
+            cab, linhas = abas_dados[melhor_aba]
+            md = [f"## Aba: {melhor_aba}", "| " + " | ".join(cab) + " |"]
+            for l in linhas[:60]:
+                vals = [str(v).strip() if v is not None else "-" for v in l[:len(cab)]]
+                md.append("| " + " | ".join(vals) + " |")
+            partes.append("\n".join(md))
+        for nome_aba, (cab, linhas) in abas_dados.items():
+            if nome_aba != melhor_aba and linhas:
+                ultima = [str(v).strip() if v is not None else "-" for v in linhas[-1][:len(cab)]]
+                partes.append(f"Resumo da aba {nome_aba} ({', '.join(cab)}): | " + " | ".join(ultima) + " |")
+        return "\n\n".join(partes)
     finally:
         wb.close()
 
@@ -1361,7 +1411,7 @@ async def preparar_resposta(request_data: Ask, user):
                     fonte_principal = anteriores[0]
                     break
     resposta_tabular_direta = None
-    if fonte_principal in arquivos_tabulares and deve_analisar_tabela(request_data.texto):
+    if (not MODO_8GB) and fonte_principal in arquivos_tabulares and deve_analisar_tabela(request_data.texto):
 
         arquivo_tabular_direto = fonte_principal
         print(f"\n[TOOL FORÇADA — único arquivo tabular detectado]: {arquivo_tabular_direto}")
@@ -1370,14 +1420,11 @@ async def preparar_resposta(request_data: Ask, user):
             caminho_arquivo=arquivo_tabular_direto,
             pergunta=request_data.texto,
         )
-        tool_utilizada = True
-        dado_tabular_bruto = resultado_analise.get("resultado_bruto") if resultado_analise.get("sucesso") else None
-        contexto = montar_contexto_tabular(arquivo_tabular_direto, resultado_analise)
-    if tool_utilizada:
         if resultado_analise.get("sucesso"):
+            tool_utilizada = True
+            dado_tabular_bruto = resultado_analise.get("resultado_bruto")
+            contexto = montar_contexto_tabular(arquivo_tabular_direto, resultado_analise)
             resposta_tabular_direta = formatar_resultado(dado_tabular_bruto) if dado_tabular_bruto is not None else resultado_analise["resultado"]
-        else:
-            resposta_tabular_direta = "N\u00e3o foi poss\u00edvel obter uma resposta confi\u00e1vel neste arquivo."
 
     rawScores = {}
     smlFonts = {}
@@ -1439,6 +1486,13 @@ async def preparar_resposta(request_data: Ask, user):
                         with open(candidatos[0], encoding="utf-8") as documento:
                             textos = documento.read()
                 except (OSError, UnicodeError):
+                    pass
+            elif len(candidatos) == 1 and candidatos[0].lower().endswith(".xlsx"):
+                try:
+                    contexto_xlsx = montar_contexto_xlsx_8gb(candidatos[0], request_data.texto, chunks)
+                    if contexto_xlsx:
+                        textos = contexto_xlsx
+                except Exception:
                     pass
             context_parts.append(f"### {fonte}\n{textos}")
 
@@ -1613,21 +1667,22 @@ calculado com precisão via código Python real — não é uma estimativa nem u
             db.close()
             return
 
-        if (not tool_utilizada and winnerFonts and re.search(
+        if (not MODO_8GB and not tool_utilizada and winnerFonts and re.search(
                 r"percentual|porcentagem|percentagem|taxa|%", request_data.texto, re.IGNORECASE)):
             # Validate before sending any answer: streaming cannot retract a wrong number.
             emitir_etapa("percentage")
             resposta_conferida = await asyncio.to_thread(
                 responder_percentual, request_data.texto, contexto, MODEL)
-            yield json.dumps({"type": "content", "text": resposta_conferida,
-                              "id": id_resposta, "fontes": fonts,
-                              "winner": winnerFonts, "percent": percents,
-                              "conversationId": conversation_id}) + "\n"
-            if conversation_id:
-                db.add(Message(conversation_id=conversation_id, role="ai", content=resposta_conferida))
-                db.commit()
-            db.close()
-            return
+            if not resposta_conferida.startswith("N\u00e3o encontrei"):
+                yield json.dumps({"type": "content", "text": resposta_conferida,
+                                  "id": id_resposta, "fontes": fonts,
+                                  "winner": winnerFonts, "percent": percents,
+                                  "conversationId": conversation_id}) + "\n"
+                if conversation_id:
+                    db.add(Message(conversation_id=conversation_id, role="ai", content=resposta_conferida))
+                    db.commit()
+                db.close()
+                return
 
         emitir_etapa("model")
         loop = asyncio.get_event_loop()

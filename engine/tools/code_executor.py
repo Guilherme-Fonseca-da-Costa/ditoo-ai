@@ -157,14 +157,30 @@ def consultar_por_identificador(tabelas, pergunta):
             "tentativas":0}
 
 
+def ler_tabelas_excel(caminho):
+    bruto = pd.read_excel(caminho, sheet_name=None, header=None)
+    tabelas = {}
+    for nome, df in bruto.items():
+        df = df.dropna(how="all").reset_index(drop=True)
+        if df.empty:
+            continue
+        header_idx = next((i for i in range(min(5, len(df))) if df.iloc[i].notna().sum() >= 2), 0)
+        cols = [str(c).strip() if pd.notna(c) else f"Col_{j}" for j, c in enumerate(df.iloc[header_idx])]
+        dados = df.iloc[header_idx + 1:].copy()
+        dados.columns = cols
+        dados = dados.dropna(how="all").reset_index(drop=True)
+        tabelas[nome] = dados
+    return tabelas
+
+
 def consultar_excel(caminho, pergunta):
     emitir_etapa("table")
-    tabelas = pd.read_excel(caminho, sheet_name=None)
+    tabelas = ler_tabelas_excel(caminho)
     consulta_direta = consultar_por_identificador(tabelas, pergunta)
     if consulta_direta is not None:
         return consulta_direta
     catalogo = {nome: {"schema": montar_schema_info(df),
-                       "linhas": df.head(40).to_dict(orient="records")}
+                       "linhas": df.head(10).to_dict(orient="records")}
                 for nome, df in tabelas.items()}
     feedback = ""
     for _ in range(2):
@@ -349,7 +365,7 @@ def executar_analise_tabular(
     schema_info = montar_schema_info(df)
     # Keep relationships between IDs and values visible to the reviewer.
     schema_info += "\nLINHAS DE EVIDENCIA (campos da mesma linha permanecem associados):\n"
-    schema_info += df.head(50).to_json(orient="records", force_ascii=False, date_format="iso")
+    schema_info += df.head(15).to_json(orient="records", force_ascii=False, date_format="iso")
     feedback_anterior = ""
 
     for tentativa in range(1, max_tentativas + 1):
