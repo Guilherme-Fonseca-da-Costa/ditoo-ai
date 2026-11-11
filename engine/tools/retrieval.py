@@ -1,7 +1,7 @@
 """Apply folder access and explicit filenames before ranking document chunks."""
 import re
 
-def buscar_documentos_permitidos(collection, texto, accessible_ids, max_results=20):
+def buscar_documentos_permitidos(collection, texto, accessible_ids, max_results=20, *, diversify=False):
     vazio = {"documents": [[]], "metadatas": [[]], "distances": [[]]}
     if accessible_ids is not None and not accessible_ids:
         return vazio
@@ -21,4 +21,16 @@ def buscar_documentos_permitidos(collection, texto, accessible_ids, max_results=
         filters.append({"fonte": {"$in": sorted(set(names))}})
     if filters:
         parametros["where"] = filters[0] if len(filters) == 1 else {"$and": filters}
-    return collection.query(**parametros)
+    results = collection.query(**parametros)
+    if not diversify or names or not results["metadatas"][0]:
+        return results
+
+    # A file with many similar chunks can fill every slot in the first query.
+    seen = sorted({meta["fonte"] for meta in results["metadatas"][0]})
+    alternate_filters = filters + [{"fonte": {"$nin": seen}}]
+    alternate = collection.query(
+        **{**parametros, "n_results": min(8, quantidade),
+           "where": alternate_filters[0] if len(alternate_filters) == 1 else {"$and": alternate_filters}})
+    for key in ("documents", "metadatas", "distances"):
+        results[key][0].extend(alternate[key][0])
+    return results
